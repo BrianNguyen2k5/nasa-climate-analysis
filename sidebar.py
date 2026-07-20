@@ -3,34 +3,34 @@ import streamlit as st
 
 REGIONS = [
     "Tất cả 7 nhóm vùng",
-    "Tây Bắc",
-    "Đông Bắc",
-    "Đồng bằng Bắc Bộ",
+    "Bắc Bộ",
     "Bắc Trung Bộ",
+    "Trung Bộ",
     "Nam Trung Bộ",
     "Tây Nguyên",
-    "Nam Bộ",
+    "Đông Nam Bộ",
+    "Tây Nam Bộ"
 ]
 
 REFERENCE_POINTS = [
     "Hà Nội",
     "Lào Cai",
     "Điện Biên",
-    "Lạng Sơn",
     "Hải Phòng",
-    "Thanh Hóa",
-    "Nghệ An",
+    "Vinh",
     "Huế",
     "Đà Nẵng",
-    "Quảng Ngãi",
+    "Đồng Hới",
+    "Quy Nhơn",
+    "Phan Rang - Tháp Chàm",
     "Nha Trang",
-    "Phan Thiết",
-    "Kon Tum",
     "Pleiku",
     "Buôn Ma Thuột",
     "Đà Lạt",
     "TP. Hồ Chí Minh",
+    "Vũng Tàu",
     "Cần Thơ",
+    "Châu Đốc",
     "Cà Mau",
     "Phú Quốc",
 ]
@@ -205,13 +205,14 @@ def render_sidebar() -> str:
         st.title("Vietnam Climate Explorer")
         selected_tab = st.radio("Dashboard", NAV_ITEMS, label_visibility="collapsed")
 
-        st.selectbox("Vùng", REGIONS)
-        st.multiselect("Địa điểm", REFERENCE_POINTS, default=[])
+        st.selectbox("Vùng", REGIONS, key="sb_regions")
+        st.multiselect("Địa điểm", REFERENCE_POINTS, default=[], key="sb_location")
         st.slider(
             "Giai đoạn phân tích",
             min_value=1991,
             max_value=2025,
             value=(1991, 2025),
             label_visibility="collapsed",
+            key="sb_year_range"
         )
         return selected_tab
