@@ -1,37 +1,50 @@
 import streamlit as st
 
-REGIONS = [
-    "Tây Bắc",
-    "Đông Bắc",
-    "Đồng bằng Bắc Bộ",
-    "Bắc Trung Bộ",
-    "Nam Trung Bộ",
-    "Tây Nguyên",
-    "Nam Bộ",
-]
+REFERENCE_POINTS = {
+    "Central Highlands": [
+        "Buon Ma Thuot",
+        "Da Lat",
+        "Pleiku",
+    ],
+    "Mekong Delta": [
+        "Ca Mau",
+        "Chau Doc",
+        "Phu Quoc",
+        "Can Tho",
+    ],
+    "South Central Coast": [
+        "Nha Trang",
+        "Phan Rang-Thap Cham",
+        "Quy Nhon",
+        "Da Nang",
+    ],
+    "North": [
+        "Dien Bien Phu",
+        "Ha Noi",
+        "Hai Phong",
+        "Lao Cai",
+    ],
+    "Southeast": [
+        "Ho Chi Minh City",
+        "Vung Tau",
+    ],
+    "North Central": [
+        "Dong Hoi",
+        "Vinh",
+        "Hue",
+    ],
+}
 
-REFERENCE_POINTS = [
-    "Hà Nội",
-    "Lào Cai",
-    "Điện Biên",
-    "Lạng Sơn",
-    "Hải Phòng",
-    "Thanh Hóa",
-    "Nghệ An",
-    "Huế",
-    "Đà Nẵng",
-    "Quảng Ngãi",
-    "Nha Trang",
-    "Phan Thiết",
-    "Kon Tum",
-    "Pleiku",
-    "Buôn Ma Thuột",
-    "Đà Lạt",
-    "TP. Hồ Chí Minh",
-    "Cần Thơ",
-    "Cà Mau",
-    "Phú Quốc",
-]
+REGION_LABELS = {
+    "Central Highlands": "Tây Nguyên",
+    "Mekong Delta": "Đồng bằng sông Cửu Long",
+    "South Central Coast": "Duyên hải Nam Trung Bộ",
+    "North": "Miền Bắc",
+    "Southeast": "Đông Nam Bộ",
+    "North Central": "Bắc Trung Bộ",
+}
+
+REGION_KEYS = list(REFERENCE_POINTS.keys())
 
 NAV_ITEMS = [
     "Tổng quan",
@@ -306,30 +319,43 @@ def inject_sidebar_css() -> None:
     )
 
 
+def _get_available_locations() -> list[str]:
+    selected_r_keys = [
+        r_key for r_key in REGION_KEYS if st.session_state.get(f"chk_region_{r_key}", False)
+    ]
+    locs = []
+    for r_key in selected_r_keys:
+        locs.extend(REFERENCE_POINTS.get(r_key, []))
+    return locs
+
+
 def _on_region_select_all_change() -> None:
     new_val = st.session_state.get("chk_region_select_all", False)
-    for idx in range(len(REGIONS)):
-        st.session_state[f"chk_region_{idx}"] = new_val
+    for r_key in REGION_KEYS:
+        st.session_state[f"chk_region_{r_key}"] = new_val
 
 
 def _on_region_individual_change() -> None:
     all_checked = all(
-        st.session_state.get(f"chk_region_{idx}", False) for idx in range(len(REGIONS))
+        st.session_state.get(f"chk_region_{r_key}", False) for r_key in REGION_KEYS
     )
     st.session_state.chk_region_select_all = all_checked
 
 
-def _on_select_all_change() -> None:
-    new_val = st.session_state.get("chk_select_all", False)
-    for idx in range(len(REFERENCE_POINTS)):
-        st.session_state[f"chk_point_{idx}"] = new_val
+def _on_location_select_all_change() -> None:
+    new_val = st.session_state.get("chk_loc_select_all", False)
+    for loc in _get_available_locations():
+        st.session_state[f"chk_loc_{loc}"] = new_val
 
 
-def _on_individual_change() -> None:
-    all_checked = all(
-        st.session_state.get(f"chk_point_{idx}", False) for idx in range(len(REFERENCE_POINTS))
+def _on_location_individual_change() -> None:
+    avail_locs = _get_available_locations()
+    all_checked = (
+        all(st.session_state.get(f"chk_loc_{loc}", False) for loc in avail_locs)
+        if avail_locs
+        else False
     )
-    st.session_state.chk_select_all = all_checked
+    st.session_state.chk_loc_select_all = all_checked
 
 
 def render_sidebar() -> str:
@@ -340,7 +366,11 @@ def render_sidebar() -> str:
             <div class="sidebar-brand-container">
                 <div class="sidebar-brand-title">VietNam</div>
                 <div class="sidebar-brand-main">CLIMATE EXPLORER</div>
-                <div class="sidebar-brand-subtitle">Dữ liệu khí hậu 1991 - 2025</div>
+                <div class="sidebar-brand-subtitle">
+									Dữ liệu khí hậu 1991 - 2025
+									<br>
+									Nguồn: NASA
+								</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -351,29 +381,34 @@ def render_sidebar() -> str:
         st.markdown("<hr style='margin: 6px 0; border: none; border-top: 2px solid #bbb;'>", unsafe_allow_html=True)
 
         # Section 2: Filters
-        # Dropdown List with Checkboxes for "Vùng"
+        # --- Filter Vùng (Region Filter) ---
         st.markdown(
             '<div style="color: #1e3a5f; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Vùng</div>',
             unsafe_allow_html=True,
         )
 
         if "chk_region_select_all" not in st.session_state:
-            st.session_state.chk_region_select_all = False
-            for idx in range(len(REGIONS)):
-                st.session_state[f"chk_region_{idx}"] = False
+            st.session_state.chk_region_select_all = True
+            for r_key in REGION_KEYS:
+                st.session_state[f"chk_region_{r_key}"] = True
 
-        selected_regions = [
-            region
-            for idx, region in enumerate(REGIONS)
-            if st.session_state.get(f"chk_region_{idx}", False)
+            # Mặc định chọn tất cả các địa điểm/tỉnh khi mới mở dashboard
+            st.session_state.chk_loc_select_all = True
+            for r_key in REGION_KEYS:
+                for loc in REFERENCE_POINTS[r_key]:
+                    st.session_state[f"chk_loc_{loc}"] = True
+
+        selected_region_keys = [
+            r_key
+            for r_key in REGION_KEYS
+            if st.session_state.get(f"chk_region_{r_key}", False)
         ]
-        st.session_state.selected_regions = selected_regions
+        st.session_state.selected_regions = [REGION_LABELS[r_key] for r_key in selected_region_keys]
+        st.session_state.selected_region_keys = selected_region_keys
 
-        region_count = len(selected_regions)
-        if region_count == len(REGIONS):
-            region_popover_label = "Tất cả 7 nhóm vùng"
-        else:
-            region_popover_label = f"Đã chọn {region_count}/7 vùng"
+        region_count = len(selected_region_keys)
+        total_regions = len(REGION_KEYS)
+        region_popover_label = f"Đã chọn {region_count}/{total_regions} vùng"
 
         with st.popover(region_popover_label, use_container_width=True):
             st.checkbox(
@@ -386,47 +421,64 @@ def render_sidebar() -> str:
                 unsafe_allow_html=True,
             )
 
-            for idx, region in enumerate(REGIONS):
+            for r_key in REGION_KEYS:
                 st.checkbox(
-                    region,
-                    key=f"chk_region_{idx}",
+                    REGION_LABELS[r_key],
+                    key=f"chk_region_{r_key}",
                     on_change=_on_region_individual_change,
                 )
 
-        # Dropdown List with Checkboxes for "Địa điểm"
+        # --- Filter Địa điểm - Tỉnh (Location Filter dependent on Vùng) ---
         st.markdown(
-            '<div style="color: #1e3a5f; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Địa điểm</div>',
+            '<div style="color: #1e3a5f; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Tỉnh/Thành phố</div>',
             unsafe_allow_html=True,
         )
 
-        if "chk_select_all" not in st.session_state:
-            st.session_state.chk_select_all = False
-            for idx in range(len(REFERENCE_POINTS)):
-                st.session_state[f"chk_point_{idx}"] = False
+        available_locations = _get_available_locations()
+        total_avail = len(available_locations)
 
-        selected_points = [
-            point
-            for idx, point in enumerate(REFERENCE_POINTS)
-            if st.session_state.get(f"chk_point_{idx}", False)
-        ]
-        st.session_state.selected_reference_points = selected_points
-
-        count = len(selected_points)
-        if count == len(REFERENCE_POINTS):
-            popover_label = "Tất cả 20 địa điểm"
-        else:
-            popover_label = f"Đã chọn {count}/20 địa điểm"
-
-        with st.popover(popover_label, use_container_width=True):
-            st.checkbox("Chọn tất cả", key="chk_select_all", on_change=_on_select_all_change)
-            st.markdown(
-                "<hr style='margin: 6px 0; border: none; border-top: 1px solid #e2e8f0;'>",
-                unsafe_allow_html=True,
+        # Sync location select_all state
+        if total_avail > 0:
+            st.session_state.chk_loc_select_all = all(
+                st.session_state.get(f"chk_loc_{loc}", False) for loc in available_locations
             )
+        else:
+            st.session_state.chk_loc_select_all = False
 
-            for idx, point in enumerate(REFERENCE_POINTS):
-                st.checkbox(point, key=f"chk_point_{idx}", on_change=_on_individual_change)
+        selected_locations = [
+            loc for loc in available_locations
+            if st.session_state.get(f"chk_loc_{loc}", False)
+        ]
+        st.session_state.selected_reference_points = selected_locations
 
+        loc_count = len(selected_locations)
+        if total_avail == 0:
+            loc_popover_label = "0 tỉnh/thành phố"
+        else:
+            loc_popover_label = f"Đã chọn {loc_count}/{total_avail} tỉnh"
+
+        with st.popover(loc_popover_label, use_container_width=True):
+            if total_avail == 0:
+                st.caption("Vui lòng chọn ít nhất 1 vùng ở trên để hiển thị danh sách tỉnh/thành phố.")
+            else:
+                st.checkbox(
+                    "Chọn tất cả",
+                    key="chk_loc_select_all",
+                    on_change=_on_location_select_all_change,
+                )
+                st.markdown(
+                    "<hr style='margin: 6px 0; border: none; border-top: 1px solid #e2e8f0;'>",
+                    unsafe_allow_html=True,
+                )
+
+                for loc in available_locations:
+                    st.checkbox(
+                        loc,
+                        key=f"chk_loc_{loc}",
+                        on_change=_on_location_individual_change,
+                    )
+
+        # --- Filter Thời gian ---
         st.slider(
             "Thời gian",
             min_value=1991,
