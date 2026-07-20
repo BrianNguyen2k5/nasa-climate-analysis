@@ -325,7 +325,8 @@ def _bubble_tooltip_html(point: dict[str, object]) -> str:
         tags_html = "".join(
             f'<span style="display:inline-block;background:#FEF2F2;color:#991B1B;'
             f'border:1px solid #FECACA;border-radius:4px;font-size:9px;'
-            f'font-weight:600;padding:1px 6px;margin:1px 2px 1px 0;">'
+            f'font-weight:600;padding:1px 6px;margin:1px 2px 1px 0;'
+            f'max-width:100%;box-sizing:border-box;white-space:normal;line-height:1.25;">'
             f'{_escape(lbl)}</span>'
             for lbl in extreme_labels
         )
@@ -334,13 +335,14 @@ def _bubble_tooltip_html(point: dict[str, object]) -> str:
             f'border-top:1px dashed #FECACA;">'
             f'<div style="color:#991B1B;font-size:9.5px;font-weight:700;margin-bottom:3px;">'
             f'&#9888; C&#7843;nh b&#225;o kh&#237; h&#7853;u c&#7921;c &#273;oan:</div>'
-            f'{tags_html}</div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:100%;">'
+            f'{tags_html}</div></div>'
         )
 
     return f"""
-    <div style="font-family:'Segoe UI',Arial,sans-serif; width:240px;
-                border-left:4px solid {dot_color}; padding:10px 12px;
-                border-radius:0 8px 8px 0; font-size:11px; line-height:1.45;">
+    <div style="font-family:'Segoe UI',Arial,sans-serif; width:226px; box-sizing:border-box;
+                border-left:4px solid {dot_color}; padding:8px 10px;
+                border-radius:0 8px 8px 0; font-size:10.5px; line-height:1.35; overflow-wrap:anywhere;">
         <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
             <span style="width:11px;height:11px;border-radius:50%;background:{dot_color};flex-shrink:0;"></span>
             <strong style="font-size:13px;color:#1E3A5F;">{_escape(point['location_vn'])}</strong>
@@ -460,71 +462,133 @@ def render_vietnam_reference_map(df: pd.DataFrame) -> None:
 
     # ── Top-right legend overlay ──────────────────────────────────────────
     legend_html = """
-    <div style="
-        position:fixed; top:10px; right:10px; z-index:9999;
-        background:rgba(255,255,255,0.96);
-        border:1px solid #E2E8F0;
-        border-radius:10px;
-        box-shadow:0 4px 16px rgba(30,58,95,0.14);
-        padding:12px 14px;
-        font-family:'Segoe UI',Arial,sans-serif;
-        font-size:11px;
-        min-width:170px;
-        pointer-events:none;
-    ">
-        <div style="font-weight:800;color:#1E3A5F;font-size:12px;margin-bottom:8px;">
-            &#128200; Ch&uacute; th&iacute;ch
+    <style>
+        .climate-map-legend {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 9999;
+            width: 198px;
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+            padding: 9px 10px;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #1F2937;
+            pointer-events: none;
+            backdrop-filter: blur(4px);
+        }
+        .climate-map-legend__title {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin: 0 0 7px;
+            color: #1E3A5F;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+        .climate-map-legend__section {
+            margin-top: 7px;
+        }
+        .climate-map-legend__heading {
+            margin-bottom: 4px;
+            color: #64748B;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: .04em;
+            line-height: 1.2;
+            text-transform: uppercase;
+        }
+        .climate-map-legend__row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-height: 16px;
+            margin: 2px 0;
+            color: #334155;
+            font-size: 10px;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .climate-map-legend__row--wrap {
+            align-items: flex-start;
+            white-space: normal;
+        }
+        .climate-map-legend__dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 999px;
+            flex: 0 0 auto;
+            box-shadow: 0 0 0 1px rgba(255,255,255,.9);
+        }
+        .climate-map-legend__dot--small {
+            width: 7px;
+            height: 7px;
+            background: #94A3B8;
+        }
+        .climate-map-legend__dot--large {
+            width: 14px;
+            height: 14px;
+            background: #94A3B8;
+        }
+        .climate-map-legend__alert {
+            width: 12px;
+            height: 12px;
+            border: 2px dashed #E76F51;
+            border-radius: 999px;
+            flex: 0 0 auto;
+        }
+        .climate-map-legend__note {
+            margin-top: 3px;
+            color: #64748B;
+            font-size: 9px;
+            line-height: 1.3;
+        }
+    </style>
+    <div class="climate-map-legend">
+        <div class="climate-map-legend__title">&#128200; Ch&uacute; th&iacute;ch</div>
+
+        <div class="climate-map-legend__section">
+            <div class="climate-map-legend__heading">M&agrave;u &mdash; nhi&#7879;t &#273;&#7897; TB</div>
+            <div class="climate-map-legend__row">
+                <span class="climate-map-legend__dot" style="background:#3B82F6;"></span>
+                &lt;20&deg;C &mdash; M&aacute;t
+            </div>
+            <div class="climate-map-legend__row">
+                <span class="climate-map-legend__dot" style="background:#10B981;"></span>
+                20&ndash;24&deg;C &mdash; &Ocirc;n h&ograve;a
+            </div>
+            <div class="climate-map-legend__row">
+                <span class="climate-map-legend__dot" style="background:#F97316;"></span>
+                24&ndash;26&deg;C &mdash; &#7844;m &aacute;p
+            </div>
+            <div class="climate-map-legend__row">
+                <span class="climate-map-legend__dot" style="background:#DC2626;"></span>
+                &gt;26&deg;C &mdash; N&oacute;ng
+            </div>
         </div>
 
-        <div style="font-weight:700;color:#475569;font-size:10px;
-                    letter-spacing:.05em;text-transform:uppercase;margin-bottom:5px;">
-            M&agrave;u s&#7855;c &mdash; Nhi&#7879;t &#273;&#7897; TB
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
-            <span style="width:12px;height:12px;border-radius:50%;background:#3b82f6;display:inline-block;"></span>
-            &lt; 20&deg;C &nbsp;&mdash;&nbsp; M&aacute;t
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
-            <span style="width:12px;height:12px;border-radius:50%;background:#10b981;display:inline-block;"></span>
-            20&ndash;24&deg;C &nbsp;&mdash;&nbsp; &Ocirc;n h&ograve;a
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
-            <span style="width:12px;height:12px;border-radius:50%;background:#f97316;display:inline-block;"></span>
-            24&ndash;26&deg;C &nbsp;&mdash;&nbsp; &Acirc;m &aacute;p
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;margin-bottom:10px;">
-            <span style="width:12px;height:12px;border-radius:50%;background:#dc2626;display:inline-block;"></span>
-            &gt; 26&deg;C &nbsp;&mdash;&nbsp; N&oacute;ng
+        <div class="climate-map-legend__section">
+            <div class="climate-map-legend__heading">K&iacute;ch th&#432;&#7899;c &mdash; ng&agrave;y n&oacute;ng</div>
+            <div class="climate-map-legend__row">
+                <span class="climate-map-legend__dot climate-map-legend__dot--small"></span>
+                &Iacute;t ng&agrave;y n&oacute;ng
+            </div>
+            <div class="climate-map-legend__row">
+                <span class="climate-map-legend__dot climate-map-legend__dot--large"></span>
+                Nhi&#7873;u ng&agrave;y n&oacute;ng
+            </div>
         </div>
 
-        <div style="font-weight:700;color:#475569;font-size:10px;
-                    letter-spacing:.05em;text-transform:uppercase;margin-bottom:5px;">
-            K&iacute;ch th&#432;&#7899;c &mdash; Ng&agrave;y n&oacute;ng/n&#259;m
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-            <span style="width:8px;height:8px;border-radius:50%;background:#94a3b8;
-                         display:inline-block;border:1.5px solid white;"></span>
-            &Iacute;t ng&agrave;y n&oacute;ng
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
-            <span style="width:16px;height:16px;border-radius:50%;background:#94a3b8;
-                         display:inline-block;border:1.5px solid white;"></span>
-            Nhi&#7873;u ng&agrave;y n&oacute;ng
-        </div>
-
-        <div style="font-weight:700;color:#475569;font-size:10px;
-                    letter-spacing:.05em;text-transform:uppercase;margin-bottom:5px;">
-            C&#7843;nh b&aacute;o c&#7921;c &#273;oan
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-            <span style="width:14px;height:14px;border-radius:50%;border:2px dashed #ef4444;
-                         display:inline-block;"></span>
-            &nbsp;&#9888; V&ograve;ng &#273;&#7887; nh&#7845;p nh&aacute;y
-        </div>
-        <div style="color:#6b7280;font-size:9.5px;margin-top:2px;line-height:1.4;">
-            Nhi&#7879;t &#273;&#7897; cao &#124; M&#432;a b&#7845;t th&#432;&#7901;ng<br/>
-            H&#7841;n h&aacute;n &#124; N&#7855;ng n&oacute;ng k&eacute;o d&agrave;i<br/>
-            Nhi&#7873;u ng&agrave;y m&#432;a l&#7899;n li&ecirc;n ti&#7871;p
+        <div class="climate-map-legend__section">
+            <div class="climate-map-legend__heading">C&#7921;c &#273;oan</div>
+            <div class="climate-map-legend__row climate-map-legend__row--wrap">
+                <span class="climate-map-legend__alert"></span>
+                <span>Nhi&#7879;t &#273;&#7897; cao, m&#432;a b&#7845;t th&#432;&#7901;ng, kh&ocirc; h&#7841;n, t&#7847;n su&#7845;t n&oacute;ng/m&#432;a l&#7899;n cao.</span>
+            </div>
         </div>
     </div>
     """
@@ -549,7 +613,8 @@ def render_vietnam_reference_map(df: pd.DataFrame) -> None:
             fill_opacity=0.82,
             tooltip=folium.Tooltip(
                 _bubble_tooltip_html(point),
-                sticky=True,
+                sticky=False,
+                direction="top",
                 style=(
                     "background:white;"
                     "border:1px solid #E2E8F0;"

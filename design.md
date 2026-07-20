@@ -47,7 +47,7 @@ Tab Tổng quan có 5 KPI card đổi ý nghĩa theo phạm vi filter:
 
 Tab Tổng quan hiện đã đọc dữ liệu thật từ `data/nasa_power_vietnam_daily_clean.csv` để tính 5 KPI và tooltip bản đồ. Các chỉ số dùng các cột `T2M`, `PRECTOTCORR`, `RH2M`, `hot_day`, `heavy_rain_day`, có áp dụng filter `Vùng`, `Địa điểm` và `Giai đoạn phân tích`.
 
-Bản đồ chữ S trong tab Tổng quan được render bằng `streamlit.components.v1.html()` để SVG/HTML không bị hiển thị thành text trong Streamlit.
+Bản đồ trong tab Tổng quan được render bằng `folium` và `streamlit-folium`, dùng các điểm tham chiếu thật từ NASA POWER. Chú thích bản đồ được nhúng bằng HTML/CSS gọn trong góc phải, giải thích màu theo nhiệt độ, kích thước theo số ngày nóng và vòng cảnh báo cực đoan.
 
 ## Bảng màu
 
