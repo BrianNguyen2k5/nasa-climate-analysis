@@ -1,7 +1,6 @@
 import streamlit as st
 
 REGIONS = [
-    "Tất cả 7 nhóm vùng",
     "Tây Bắc",
     "Đông Bắc",
     "Đồng bằng Bắc Bộ",
@@ -152,8 +151,7 @@ def inject_sidebar_css() -> None:
                 flex: 1 1 100% !important;
                 box-sizing: border-box !important;
                 min-height: 40px !important;
-                background: #f8fafc !important;
-                border: 1px solid #e2e8f0 !important;
+                border: 1px solid #bbb !important;
                 border-radius: 8px !important;
                 padding: 8px 14px !important;
                 margin: 0 !important;
@@ -256,6 +254,14 @@ def inject_sidebar_css() -> None:
                 transition: border-color 150ms ease, box-shadow 150ms ease !important;
             }
 
+            [data-testid="stSidebar"] [data-testid="stPopover"] [data-testid*="stIcon"],
+            [data-testid="stSidebar"] [data-testid="stPopover"] [data-testid*="stIcon"] *,
+            [data-testid="stSidebar"] [data-testid="stPopover"] span[data-testid*="Icon"] {
+                font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+                font-size: 20px !important;
+                line-height: 1 !important;
+            }
+
             [data-testid="stSidebar"] [data-testid="stPopover"] > button:hover {
                 border-color: #cbd5e1 !important;
                 background-color: #f8fafc !important;
@@ -300,6 +306,32 @@ def inject_sidebar_css() -> None:
     )
 
 
+def _on_region_select_all_change() -> None:
+    new_val = st.session_state.get("chk_region_select_all", False)
+    for idx in range(len(REGIONS)):
+        st.session_state[f"chk_region_{idx}"] = new_val
+
+
+def _on_region_individual_change() -> None:
+    all_checked = all(
+        st.session_state.get(f"chk_region_{idx}", False) for idx in range(len(REGIONS))
+    )
+    st.session_state.chk_region_select_all = all_checked
+
+
+def _on_select_all_change() -> None:
+    new_val = st.session_state.get("chk_select_all", False)
+    for idx in range(len(REFERENCE_POINTS)):
+        st.session_state[f"chk_point_{idx}"] = new_val
+
+
+def _on_individual_change() -> None:
+    all_checked = all(
+        st.session_state.get(f"chk_point_{idx}", False) for idx in range(len(REFERENCE_POINTS))
+    )
+    st.session_state.chk_select_all = all_checked
+
+
 def render_sidebar() -> str:
     with st.sidebar:
         # Branding Header (VietNam \n CLIMATE EXPLORER)
@@ -315,46 +347,88 @@ def render_sidebar() -> str:
         )
 
         # Section 1: Navigation
-        st.markdown('<div class="sidebar-section-label">Điều hướng Dashboard</div>', unsafe_allow_html=True)
         selected_tab = st.radio("Dashboard", NAV_ITEMS, label_visibility="collapsed")
+        st.markdown("<hr style='margin: 6px 0; border: none; border-top: 2px solid #bbb;'>", unsafe_allow_html=True)
 
         # Section 2: Filters
-        st.markdown('<div class="sidebar-section-label">Bộ lọc dữ liệu</div>', unsafe_allow_html=True)
-        st.selectbox("Vùng khí hậu", REGIONS)
-
-        # Dropdown List with Checkboxes for "Địa điểm tham chiếu"
+        # Dropdown List with Checkboxes for "Vùng"
         st.markdown(
-            '<div style="color: #1e3a5f; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Địa điểm tham chiếu</div>',
+            '<div style="color: #1e3a5f; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Vùng</div>',
             unsafe_allow_html=True,
         )
 
-        if "selected_reference_points" not in st.session_state:
-            st.session_state.selected_reference_points = []
+        if "chk_region_select_all" not in st.session_state:
+            st.session_state.chk_region_select_all = False
+            for idx in range(len(REGIONS)):
+                st.session_state[f"chk_region_{idx}"] = False
 
-        count = len(st.session_state.selected_reference_points)
+        selected_regions = [
+            region
+            for idx, region in enumerate(REGIONS)
+            if st.session_state.get(f"chk_region_{idx}", False)
+        ]
+        st.session_state.selected_regions = selected_regions
+
+        region_count = len(selected_regions)
+        if region_count == len(REGIONS):
+            region_popover_label = "Tất cả 7 nhóm vùng"
+        else:
+            region_popover_label = f"Đã chọn {region_count}/7 vùng"
+
+        with st.popover(region_popover_label, use_container_width=True):
+            st.checkbox(
+                "Chọn tất cả",
+                key="chk_region_select_all",
+                on_change=_on_region_select_all_change,
+            )
+            st.markdown(
+                "<hr style='margin: 6px 0; border: none; border-top: 1px solid #e2e8f0;'>",
+                unsafe_allow_html=True,
+            )
+
+            for idx, region in enumerate(REGIONS):
+                st.checkbox(
+                    region,
+                    key=f"chk_region_{idx}",
+                    on_change=_on_region_individual_change,
+                )
+
+        # Dropdown List with Checkboxes for "Địa điểm"
+        st.markdown(
+            '<div style="color: #1e3a5f; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Địa điểm</div>',
+            unsafe_allow_html=True,
+        )
+
+        if "chk_select_all" not in st.session_state:
+            st.session_state.chk_select_all = False
+            for idx in range(len(REFERENCE_POINTS)):
+                st.session_state[f"chk_point_{idx}"] = False
+
+        selected_points = [
+            point
+            for idx, point in enumerate(REFERENCE_POINTS)
+            if st.session_state.get(f"chk_point_{idx}", False)
+        ]
+        st.session_state.selected_reference_points = selected_points
+
+        count = len(selected_points)
         if count == len(REFERENCE_POINTS):
             popover_label = "Tất cả 20 địa điểm"
         else:
             popover_label = f"Đã chọn {count}/20 địa điểm"
 
         with st.popover(popover_label, use_container_width=True):
-            select_all = st.checkbox("Chọn tất cả", key="chk_select_all")
-            st.markdown("<hr style='margin: 6px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
+            st.checkbox("Chọn tất cả", key="chk_select_all", on_change=_on_select_all_change)
+            st.markdown(
+                "<hr style='margin: 6px 0; border: none; border-top: 1px solid #e2e8f0;'>",
+                unsafe_allow_html=True,
+            )
 
-            current_selected = []
-            if select_all:
-                current_selected = REFERENCE_POINTS.copy()
-                st.caption("Đã chọn tất cả 20 địa điểm")
-            else:
-                for idx, point in enumerate(REFERENCE_POINTS):
-                    checked = st.checkbox(point, key=f"chk_point_{idx}")
-                    if checked:
-                        current_selected.append(point)
-
-            st.session_state.selected_reference_points = current_selected
+            for idx, point in enumerate(REFERENCE_POINTS):
+                st.checkbox(point, key=f"chk_point_{idx}", on_change=_on_individual_change)
 
         st.slider(
-            "Khung thời gian",
+            "Thời gian",
             min_value=1991,
             max_value=2025,
             value=(1991, 2025),
