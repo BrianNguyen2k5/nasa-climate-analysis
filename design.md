@@ -1,4 +1,4 @@
-﻿# Vietnam Climate Explorer - Design Notes
+# Vietnam Climate Explorer - Design Notes
 
 ## Mục tiêu giao diện
 
@@ -12,12 +12,12 @@ Dashboard được thiết kế như một khung phân tích học thuật cho c
 
 - `app.py`: file chạy chính, cấu hình trang, CSS nội dung chính, header, metric tổng quan và điều phối tab đang chọn.
 - `sidebar.py`: điều hướng sidebar, bộ lọc `Vùng`, `Địa điểm`, `Giai đoạn phân tích` và CSS riêng của sidebar.
-- `tabs/overview_regions.py`: tab Tổng quan.
-- `tabs/temperature_comparison.py`: tab Nhiệt độ.
-- `tabs/rainfall_humidity.py`: tab Mưa và độ ẩm.
-- `tabs/meteorological_factors.py`: tab Yếu tố khí tượng.
-- `tabs/extreme_weather.py`: tab Thời tiết cực đoan.
-- `tabs/ai_assistant.py`: tab AI, hiện là placeholder và chưa gọi API.
+- `tabs/tab_1_overview_regions.py`: tab Tổng quan.
+- `tabs/tab_2_temperature_comparison.py`: tab Nhiệt độ.
+- `tabs/tab_3_rainfall_humidity.py`: tab Mưa và độ ẩm.
+- `tabs/tab_4_meteorological_factors.py`: tab Yếu tố khí tượng.
+- `tabs/tab_5_extreme_weather.py`: tab Thời tiết cực đoan.
+- `tabs/tab_6_ai_assistant.py`: tab AI, hiện là placeholder và chưa gọi API.
 - `tabs/__init__.py`: đánh dấu thư mục `tabs` là package Python.
 
 ## Sidebar
@@ -45,11 +45,11 @@ Dashboard được thiết kế như một khung phân tích học thuật cho c
 
 Mỗi thành viên phụ trách một tab chính và chỉ sửa file tab tương ứng:
 
-- Thành viên 1: `tabs/overview_regions.py`
-- Thành viên 2: `tabs/temperature_comparison.py`
-- Thành viên 3: `tabs/rainfall_humidity.py`
-- Thành viên 4: `tabs/meteorological_factors.py`
-- Thành viên 5: `tabs/extreme_weather.py`
+- Thành viên 1: `tabs/tab_1_overview_regions.py`
+- Thành viên 2: `tabs/tab_2_temperature_comparison.py`
+- Thành viên 3: `tabs/tab_3_rainfall_humidity.py`
+- Thành viên 4: `tabs/tab_4_meteorological_factors.py`
+- Thành viên 5: `tabs/tab_5_extreme_weather.py`
 
 Quy ước làm nhóm:
 
@@ -57,7 +57,7 @@ Quy ước làm nhóm:
 - Nếu cần chỉnh sidebar, chỉ sửa `sidebar.py`.
 - Không đổi tên hàm render chính trong từng tab.
 - Nếu cần helper riêng cho một tab, đặt helper trong chính file tab đó hoặc tạo thư mục con riêng theo tên tab.
-- Tab AI nằm ở `tabs/ai_assistant.py` và là phần mở rộng riêng, không nằm trong phạm vi 5 tab chính của 5 thành viên.
+- Tab AI nằm ở `tabs/tab_6_ai_assistant.py` và là phần mở rộng riêng, không nằm trong phạm vi 5 tab chính của 5 thành viên.
 
 ## Hướng mở rộng
 
