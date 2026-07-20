@@ -133,23 +133,23 @@ def inject_css() -> None:
                 font-size: 0.82rem;
             }}
             .overview-kpi-card {{
-                min-height: 150px;
-                height: 150px;
+                min-height: 132px;
+                height: 132px;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 justify-content: flex-start;
                 text-align: center;
-                padding: 18px 14px;
+                padding: 14px 12px;
             }}
 
             .overview-kpi-card .metric-label {{
                 width: 100%;
-                min-height: 34px;
+                min-height: 28px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                margin-bottom: 10px;
+                margin-bottom: 8px;
                 text-align: center;
             }}
 
@@ -159,18 +159,18 @@ def inject_css() -> None:
                 justify-content: center;
                 gap: 4px;
                 color: var(--primary);
-                margin-bottom: 14px;
+                margin-bottom: 10px;
                 white-space: nowrap;
             }}
 
             .kpi-number {{
-                font-size: 1.75rem;
+                font-size: 1.58rem;
                 font-weight: 780;
                 line-height: 1;
             }}
 
             .kpi-unit {{
-                font-size: 1rem;
+                font-size: 0.9rem;
                 font-weight: 720;
                 line-height: 1;
             }}
@@ -178,7 +178,7 @@ def inject_css() -> None:
             .overview-kpi-subject {{
                 width: 100%;
                 color: var(--muted);
-                font-size: 0.84rem;
+                font-size: 0.8rem;
                 font-weight: 700;
                 text-align: center;
                 line-height: 1.25;
@@ -268,12 +268,7 @@ def render_header() -> None:
     st.markdown(
         """
         <section class="dashboard-hero">
-            <div class="eyebrow">Khí hậu Việt Nam | 1991-2025</div>
-            <div class="hero-title">Phân tích và so sánh đặc điểm khí hậu giữa 7 nhóm vùng và 20 điểm tham chiếu</div>
-            <p class="hero-subtitle">
-                Sườn dashboard học thuật cho phân tích nhiệt độ, mưa, độ ẩm, các yếu tố khí tượng và thời tiết cực đoan.
-                Các vùng trực quan hóa đang để placeholder để có thể gắn biểu đồ thật ở bước tiếp theo.
-            </p>
+            <div class="hero-title">Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu</div>
         </section>
         """,
         unsafe_allow_html=True,
@@ -283,7 +278,7 @@ def render_header() -> None:
 def render_metric_row() -> None:
     cols = st.columns(4)
     with cols[0]:
-        metric_card("Nhóm vùng", "7", "Vùng khí hậu chính")
+        metric_card("Nhóm vùng", "6", "Vùng khí hậu chính")
     with cols[1]:
         metric_card("Địa điểm", "20", "Điểm đại diện")
     with cols[2]:

@@ -2,13 +2,12 @@ import streamlit as st
 
 
 REGION_VIETNAMESE = {
-    "Central Highlands": "Tây Nguyên",
-    "Mekong Delta": "Đồng bằng sông Cửu Long",
-    "South Central Coast": "Duyên hải Nam Trung Bộ",
-    "Central": "Miền Trung",
-    "North": "Miền Bắc",
-    "Southeast": "Đông Nam Bộ",
-    "North Central": "Bắc Trung Bộ",
+    "Bắc Trung Bộ": "Bắc Trung Bộ",
+    "Nam Trung Bộ": "Nam Trung Bộ",
+    "Trung du và miền núi phía Bắc": "Trung du và miền núi phía Bắc",
+    "Đông Nam Bộ": "Đông Nam Bộ",
+    "Đồng bằng sông Cửu Long": "Đồng bằng sông Cửu Long",
+    "Đồng bằng sông Hồng": "Đồng bằng sông Hồng",
 }
 
 LOCATION_VIETNAMESE = {
@@ -35,13 +34,12 @@ LOCATION_VIETNAMESE = {
 }
 
 LOCATIONS_BY_REGION = {
-    "North": ["Ha Noi", "Lao Cai", "Dien Bien Phu", "Hai Phong"],
-    "North Central": ["Dong Hoi", "Vinh"],
-    "Central": ["Da Nang", "Hue"],
-    "South Central Coast": ["Nha Trang", "Phan Rang-Thap Cham", "Quy Nhon"],
-    "Central Highlands": ["Buon Ma Thuot", "Da Lat", "Pleiku"],
-    "Southeast": ["Ho Chi Minh City", "Vung Tau"],
-    "Mekong Delta": ["Can Tho", "Ca Mau", "Chau Doc", "Phu Quoc"],
+    "Bắc Trung Bộ": ["Dong Hoi", "Hue", "Vinh"],
+    "Nam Trung Bộ": ["Buon Ma Thuot", "Da Lat", "Da Nang", "Nha Trang", "Phan Rang-Thap Cham", "Pleiku", "Quy Nhon"],
+    "Trung du và miền núi phía Bắc": ["Dien Bien Phu", "Lao Cai"],
+    "Đông Nam Bộ": ["Ho Chi Minh City", "Vung Tau"],
+    "Đồng bằng sông Cửu Long": ["Ca Mau", "Can Tho", "Chau Doc", "Phu Quoc"],
+    "Đồng bằng sông Hồng": ["Ha Noi", "Hai Phong"],
 }
 
 LOCATIONS_BY_REGION_VN = {
@@ -49,7 +47,7 @@ LOCATIONS_BY_REGION_VN = {
     for region, locations in LOCATIONS_BY_REGION.items()
 }
 
-ALL_REGIONS_LABEL = "Tất cả 7 nhóm vùng"
+ALL_REGIONS_LABEL = "Tất cả 6 nhóm vùng"
 NAV_ITEMS = [
     "Tổng quan",
     "Nhiệt độ",

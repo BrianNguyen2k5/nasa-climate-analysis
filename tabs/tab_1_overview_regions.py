@@ -3,6 +3,7 @@ import html
 import math
 import re
 
+import altair as alt
 import folium
 import pandas as pd
 import streamlit as st
@@ -11,34 +12,27 @@ from streamlit_folium import st_folium
 
 
 DATA_PATH = Path("data/nasa_power_vietnam_daily_clean.csv")
-ALL_REGIONS_LABEL = "Tất cả 7 nhóm vùng"
+ALL_REGIONS_LABEL = "Tất cả 6 nhóm vùng"
 
 REGION_VIETNAMESE = {
-    "Central Highlands": "Tây Nguyên",
-    "Mekong Delta": "Đồng bằng sông Cửu Long",
-    "South Central Coast": "Duyên hải Nam Trung Bộ",
-    "Central": "Miền Trung",
-    "North": "Miền Bắc",
-    "Southeast": "Đông Nam Bộ",
-    "North Central": "Bắc Trung Bộ",
+    "Bắc Trung Bộ": "Bắc Trung Bộ",
+    "Nam Trung Bộ": "Nam Trung Bộ",
+    "Trung du và miền núi phía Bắc": "Trung du và miền núi phía Bắc",
+    "Đông Nam Bộ": "Đông Nam Bộ",
+    "Đồng bằng sông Cửu Long": "Đồng bằng sông Cửu Long",
+    "Đồng bằng sông Hồng": "Đồng bằng sông Hồng",
 }
 REGION_ENGLISH = {value: key for key, value in REGION_VIETNAMESE.items()}
 
 # Colour palette for each region (used for chips + tooltip accent)
 REGION_COLORS = {
-    "Miền Bắc":                    "#3B82F6",
-    "Bắc Trung Bộ":                "#8B5CF6",
-    "Miền Trung":                  "#EC4899",
-    "Duyên hải Nam Trung Bộ":      "#F59E0B",
-    "Tây Nguyên":                  "#10B981",
-    "Đông Nam Bộ":                 "#EF4444",
-    "Đồng bằng sông Cửu Long":    "#06B6D4",
+    "Bắc Trung Bộ": "#8B5CF6",
+    "Nam Trung Bộ": "#F59E0B",
+    "Trung du và miền núi phía Bắc": "#3B82F6",
+    "Đông Nam Bộ": "#EF4444",
+    "Đồng bằng sông Cửu Long": "#06B6D4",
+    "Đồng bằng sông Hồng": "#10B981",
 }
-
-# Temperature bounds for colour mapping (°C)
-TEMP_COLD = 20.0
-TEMP_HOT  = 28.0
-
 LOCATION_VIETNAMESE = {
     "Buon Ma Thuot": "Buôn Ma Thuột",
     "Ca Mau": "Cà Mau",
@@ -69,24 +63,12 @@ def _escape(value: object) -> str:
 
 
 def _temp_to_color(temp: float) -> str:
-    """Map temperature (°C) to a hex colour: blue → teal → orange → red."""
-    t = max(0.0, min(1.0, (temp - TEMP_COLD) / (TEMP_HOT - TEMP_COLD)))
-    if t < 0.33:
-        u = t / 0.33
-        r = int(59  + (16  - 59)  * u)
-        g = int(130 + (185 - 130) * u)
-        b = int(246 + (129 - 246) * u)
-    elif t < 0.66:
-        u = (t - 0.33) / 0.33
-        r = int(16  + (249 - 16)  * u)
-        g = int(185 + (115 - 185) * u)
-        b = int(129 + (22  - 129) * u)
-    else:
-        u = (t - 0.66) / 0.34
-        r = int(249 + (220 - 249) * u)
-        g = int(115 + (38  - 115) * u)
-        b = int(22  + (38  - 22)  * u)
-    return f"#{r:02x}{g:02x}{b:02x}"
+    """Map average temperature to 3 discrete classes."""
+    if temp < 20:
+        return "#3B82F6"  # xanh dương
+    if temp <= 26:
+        return "#F97316"  # cam
+    return "#DC2626"      # đỏ
 
 
 # ── Extreme-weather thresholds ──────────────────────────────────────────────
@@ -107,7 +89,6 @@ _EXTREME_CHECKS: list[tuple[str, str, float, str]] = [
     # High count → high frequency, NOT necessarily consecutive days
     ("heavy_days", ">",   20.0, "Tần suất mưa lớn cao"),
 ]
-
 
 
 def _extreme_labels(point: dict[str, object]) -> list[str]:
@@ -141,7 +122,8 @@ def load_climate_data() -> pd.DataFrame:
     ]
     df = pd.read_csv(DATA_PATH, usecols=usecols)
     df["region_vn"] = df["region"].map(REGION_VIETNAMESE).fillna(df["region"])
-    df["location_vn"] = df["location_name"].map(LOCATION_VIETNAMESE).fillna(df["location_name"])
+    df["location_vn"] = df["location_name"].map(
+        LOCATION_VIETNAMESE).fillna(df["location_name"])
     return df
 
 
@@ -206,11 +188,15 @@ def _kpi_mode(filters: dict[str, object]) -> str:
 def build_kpis(df: pd.DataFrame, filters: dict[str, object]) -> list[dict[str, str]]:
     if df.empty:
         return [
-            {"title": "Nhiệt độ trung bình", "value": "Không có dữ liệu", "subject": ""},
-            {"title": "Tổng lượng mưa trung bình năm", "value": "Không có dữ liệu", "subject": ""},
+            {"title": "Nhiệt độ trung bình",
+                "value": "Không có dữ liệu", "subject": ""},
+            {"title": "Tổng lượng mưa trung bình năm",
+                "value": "Không có dữ liệu", "subject": ""},
             {"title": "Độ ẩm trung bình", "value": "Không có dữ liệu", "subject": ""},
-            {"title": "Số ngày nóng trung bình", "value": "Không có dữ liệu", "subject": ""},
-            {"title": "Số ngày mưa lớn trung bình", "value": "Không có dữ liệu", "subject": ""},
+            {"title": "Số ngày nóng trung bình",
+                "value": "Không có dữ liệu", "subject": ""},
+            {"title": "Số ngày mưa lớn trung bình",
+                "value": "Không có dữ liệu", "subject": ""},
         ]
 
     mode = _kpi_mode(filters)
@@ -225,11 +211,16 @@ def build_kpis(df: pd.DataFrame, filters: dict[str, object]) -> list[dict[str, s
         heavy = annual.groupby("region_vn")["heavy_rain_days"].mean()
 
         return [
-            {"title": "Nhiệt độ trung bình cao nhất", "value": f"{_format_decimal(temp_value)}°C", "subject": temp},
-            {"title": "Lượng mưa cao nhất", "value": f"{_format_int(rain.max())} mm/năm", "subject": rain.idxmax()},
-            {"title": "Độ ẩm trung bình cao nhất", "value": f"{_format_decimal(humidity.max())}%", "subject": humidity.idxmax()},
-            {"title": "Số ngày nóng nhiều nhất", "value": f"{_format_decimal(hot.max())} ngày/năm", "subject": hot.idxmax()},
-            {"title": "Số ngày mưa lớn nhiều nhất", "value": f"{_format_decimal(heavy.max())} ngày/năm", "subject": heavy.idxmax()},
+            {"title": "Nhiệt độ trung bình cao nhất",
+                "value": f"{_format_decimal(temp_value)}°C", "subject": temp},
+            {"title": "Lượng mưa cao nhất",
+                "value": f"{_format_int(rain.max())} mm/năm", "subject": rain.idxmax()},
+            {"title": "Độ ẩm trung bình cao nhất",
+                "value": f"{_format_decimal(humidity.max())}%", "subject": humidity.idxmax()},
+            {"title": "Số ngày nóng nhiều nhất",
+                "value": f"{_format_decimal(hot.max())} ngày/năm", "subject": hot.idxmax()},
+            {"title": "Số ngày mưa lớn nhiều nhất",
+                "value": f"{_format_decimal(heavy.max())} ngày/năm", "subject": heavy.idxmax()},
         ]
 
     scope = _scope_label(filters)
@@ -238,12 +229,175 @@ def build_kpis(df: pd.DataFrame, filters: dict[str, object]) -> list[dict[str, s
     heavy_days = annual["heavy_rain_days"].mean()
 
     return [
-        {"title": "Nhiệt độ trung bình", "value": f"{_format_decimal(df['T2M'].mean())}°C", "subject": scope},
-        {"title": "Tổng lượng mưa trung bình năm", "value": f"{_format_int(annual_rain)} mm/năm", "subject": scope},
-        {"title": "Độ ẩm trung bình", "value": f"{_format_decimal(df['RH2M'].mean())}%", "subject": scope},
-        {"title": "Số ngày nóng trung bình", "value": f"{_format_decimal(hot_days)} ngày/năm", "subject": scope},
-        {"title": "Số ngày mưa lớn trung bình", "value": f"{_format_decimal(heavy_days)} ngày/năm", "subject": scope},
+        {"title": "Nhiệt độ trung bình",
+            "value": f"{_format_decimal(df['T2M'].mean())}°C", "subject": scope},
+        {"title": "Tổng lượng mưa trung bình năm",
+            "value": f"{_format_int(annual_rain)} mm/năm", "subject": scope},
+        {"title": "Độ ẩm trung bình",
+            "value": f"{_format_decimal(df['RH2M'].mean())}%", "subject": scope},
+        {"title": "Số ngày nóng trung bình",
+            "value": f"{_format_decimal(hot_days)} ngày/năm", "subject": scope},
+        {"title": "Số ngày mưa lớn trung bình",
+            "value": f"{_format_decimal(heavy_days)} ngày/năm", "subject": scope},
     ]
+
+
+TREND_VARIABLES = {
+    "Nhiệt độ": {
+        "label": "Nhiệt độ TB (°C)",
+        "unit": "°C",
+    },
+    "Độ ẩm": {
+        "label": "Độ ẩm TB (%)",
+        "unit": "%",
+    },
+    "Lượng mưa": {
+        "label": "Lượng mưa TB năm (mm)",
+        "unit": "mm/năm",
+    },
+}
+
+
+def build_yearly_trend(df: pd.DataFrame, variable: str) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=["Năm", TREND_VARIABLES[variable]["label"]])
+
+    label = TREND_VARIABLES[variable]["label"]
+
+    if variable == "Nhiệt độ":
+        trend = df.groupby("year", as_index=False)["T2M"].mean()
+        trend = trend.rename(columns={"year": "Năm", "T2M": label})
+    elif variable == "Độ ẩm":
+        trend = df.groupby("year", as_index=False)["RH2M"].mean()
+        trend = trend.rename(columns={"year": "Năm", "RH2M": label})
+    else:
+        annual_rain = (
+            df.groupby(["location_vn", "year"], as_index=False)["PRECTOTCORR"]
+            .sum()
+            .rename(columns={"PRECTOTCORR": "annual_rain"})
+        )
+        trend = annual_rain.groupby("year", as_index=False)[
+            "annual_rain"].mean()
+        trend = trend.rename(columns={"year": "Năm", "annual_rain": label})
+
+    trend[label] = trend[label].round(2)
+    return trend.sort_values("Năm")
+
+
+def render_yearly_trend_chart(df: pd.DataFrame, filters: dict[str, object]) -> None:
+    st.markdown(
+        """
+        <div class="section-title" style="margin-top: 0; margin-bottom: 4px;">
+            Xu hướng theo năm
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    selected_variable = st.selectbox(
+        "Biến hiển thị",
+        list(TREND_VARIABLES.keys()),
+        key="overview_yearly_trend_variable",
+        label_visibility="collapsed",
+    )
+
+    trend = build_yearly_trend(df, selected_variable)
+    label = TREND_VARIABLES[selected_variable]["label"]
+
+    if trend.empty:
+        st.info("Không có dữ liệu phù hợp với bộ lọc hiện tại.")
+        return
+
+    chart_data = trend.copy()
+    chart_data["Năm"] = chart_data["Năm"].astype(str)
+    st.line_chart(
+        chart_data,
+        x="Năm",
+        y=label,
+        x_label="Thời gian (năm)",
+        y_label=label,
+        height=240,
+        use_container_width=True,
+    )
+
+
+def build_location_ranking(df: pd.DataFrame, variable: str, filters: dict[str, object]) -> pd.DataFrame:
+    label = TREND_VARIABLES[variable]["label"]
+    if df.empty:
+        return pd.DataFrame(columns=["Tỉnh/thành", label])
+
+    if variable == "Nhiệt độ":
+        ranking = df.groupby("location_vn", as_index=False)["T2M"].mean()
+        ranking = ranking.rename(
+            columns={"location_vn": "Tỉnh/thành", "T2M": label})
+    elif variable == "Độ ẩm":
+        ranking = df.groupby("location_vn", as_index=False)["RH2M"].mean()
+        ranking = ranking.rename(
+            columns={"location_vn": "Tỉnh/thành", "RH2M": label})
+    else:
+        annual_rain = (
+            df.groupby(["location_vn", "year"], as_index=False)["PRECTOTCORR"]
+            .sum()
+            .rename(columns={"PRECTOTCORR": "annual_rain"})
+        )
+        ranking = annual_rain.groupby("location_vn", as_index=False)[
+            "annual_rain"].mean()
+        ranking = ranking.rename(
+            columns={"location_vn": "Tỉnh/thành", "annual_rain": label})
+
+    ranking[label] = ranking[label].round(2)
+    ranking = ranking.sort_values(label, ascending=False)
+
+    selected_locations = filters.get("locations", [])
+    if not isinstance(selected_locations, list) or not selected_locations:
+        ranking = ranking.head(5)
+
+    return ranking
+
+
+def render_location_ranking_bar_chart(df: pd.DataFrame, filters: dict[str, object]) -> None:
+    st.markdown(
+        """
+        <div class="section-title" style="margin-top: 0; margin-bottom: 4px;">
+            Xếp hạng địa điểm
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    selected_variable = st.selectbox(
+        "Biến xếp hạng",
+        list(TREND_VARIABLES.keys()),
+        key="overview_location_rank_variable",
+        label_visibility="collapsed",
+    )
+
+    ranking = build_location_ranking(df, selected_variable, filters)
+    label = TREND_VARIABLES[selected_variable]["label"]
+
+    if ranking.empty:
+        st.info("Không có dữ liệu phù hợp với bộ lọc hiện tại.")
+        return
+
+    chart = (
+        alt.Chart(ranking)
+        .mark_bar(color="#1E3A5F", cornerRadiusEnd=3)
+        .encode(
+            x=alt.X(field=label, type="quantitative", title=label),
+            y=alt.Y(
+                field="Tỉnh/thành",
+                type="nominal",
+                title="Tỉnh/thành",
+                sort=alt.SortField(field=label, order="descending"),
+            ),
+            tooltip=[
+                alt.Tooltip(field="Tỉnh/thành", type="nominal",
+                            title="Tỉnh/thành"),
+                alt.Tooltip(field=label, type="quantitative",
+                            title=label, format=".2f"),
+            ],
+        )
+        .properties(height=210)
+    )
+    st.altair_chart(chart, use_container_width=True)
 
 
 def _split_value(value: str) -> tuple[str, str]:
@@ -284,34 +438,36 @@ def build_location_summary(df: pd.DataFrame) -> list[dict[str, object]]:
 
     annual = _annual_location_metrics(df)
     daily_metrics = (
-        df.groupby(["location_name", "location_vn", "region_vn", "latitude", "longitude"], as_index=False)
+        df.groupby(["location_name", "location_vn", "region_vn",
+                   "latitude", "longitude"], as_index=False)
         .agg(temp=("T2M", "mean"), humidity=("RH2M", "mean"))
     )
     annual_metrics = (
         annual.groupby(["location_vn", "region_vn"], as_index=False)
         .agg(rain=("annual_rain", "mean"), hot_days=("hot_days", "mean"), heavy_days=("heavy_rain_days", "mean"))
     )
-    summary = daily_metrics.merge(annual_metrics, on=["location_vn", "region_vn"], how="left")
+    summary = daily_metrics.merge(
+        annual_metrics, on=["location_vn", "region_vn"], how="left")
     return summary.to_dict("records")
 
 
 def _bubble_tooltip_html(point: dict[str, object]) -> str:
     """Build a rich HTML popup for a Folium CircleMarker."""
-    temp_val  = float(point["temp"])
-    rain_val  = float(point["rain"])
-    hum_val   = float(point["humidity"])
-    hot_val   = float(point["hot_days"])
+    temp_val = float(point["temp"])
+    rain_val = float(point["rain"])
+    hum_val = float(point["humidity"])
+    hot_val = float(point["hot_days"])
     heavy_val = float(point["heavy_days"])
     region_vn = str(point["region_vn"])
 
-    dot_color  = _temp_to_color(temp_val)
+    dot_color = _temp_to_color(temp_val)
     region_col = REGION_COLORS.get(region_vn, "#1E3A5F")
     extreme_labels = _extreme_labels(point)
-    extreme        = bool(extreme_labels)
+    extreme = bool(extreme_labels)
 
-    temp_bar  = max(2, min(100, int((temp_val - 15) / (32 - 15) * 100)))
-    rain_bar  = max(2, min(100, int(rain_val / 3500 * 100)))
-    hum_bar   = max(2, min(100, int(hum_val / 100 * 100)))
+    temp_bar = max(2, min(100, int((temp_val - 15) / (32 - 15) * 100)))
+    rain_bar = max(2, min(100, int(rain_val / 3500 * 100)))
+    hum_bar = max(2, min(100, int(hum_val / 100 * 100)))
 
     extreme_badge = (
         '<span style="margin-left:auto;background:#FEE2E2;color:#DC2626;'
@@ -437,8 +593,8 @@ def render_vietnam_reference_map(df: pd.DataFrame) -> None:
                 })();
                 {% endmacro %}
             """)
-            self.sw       = sw
-            self.ne       = ne
+            self.sw = sw
+            self.ne = ne
             self.min_zoom = min_zoom
 
     _LockBounds(VN_SW, VN_NE, min_zoom=5).add_to(m)
@@ -456,9 +612,9 @@ def render_vietnam_reference_map(df: pd.DataFrame) -> None:
 
     # ── Bubble sizing by hot_days ─────────────────────────────────────────
     hot_vals = [float(p["hot_days"]) for p in points]
-    hot_min  = min(hot_vals) if hot_vals else 0
-    hot_max  = max(hot_vals) if hot_vals else 1
-    hot_rng  = max(hot_max - hot_min, 1)
+    hot_min = min(hot_vals) if hot_vals else 0
+    hot_max = max(hot_vals) if hot_vals else 1
+    hot_rng = max(hot_max - hot_min, 1)
 
     # ── Top-right legend overlay ──────────────────────────────────────────
     legend_html = """
@@ -555,22 +711,17 @@ def render_vietnam_reference_map(df: pd.DataFrame) -> None:
             <div class="climate-map-legend__heading">M&agrave;u &mdash; nhi&#7879;t &#273;&#7897; TB</div>
             <div class="climate-map-legend__row">
                 <span class="climate-map-legend__dot" style="background:#3B82F6;"></span>
-                &lt;20&deg;C &mdash; M&aacute;t
-            </div>
-            <div class="climate-map-legend__row">
-                <span class="climate-map-legend__dot" style="background:#10B981;"></span>
-                20&ndash;24&deg;C &mdash; &Ocirc;n h&ograve;a
+                &lt;20&deg;C &mdash; Xanh d&#432;&#417;ng
             </div>
             <div class="climate-map-legend__row">
                 <span class="climate-map-legend__dot" style="background:#F97316;"></span>
-                24&ndash;26&deg;C &mdash; &#7844;m &aacute;p
+                20&ndash;26&deg;C &mdash; Cam
             </div>
             <div class="climate-map-legend__row">
                 <span class="climate-map-legend__dot" style="background:#DC2626;"></span>
-                &gt;26&deg;C &mdash; N&oacute;ng
+                &gt;26&deg;C &mdash; &#272;&#7887;
             </div>
         </div>
-
         <div class="climate-map-legend__section">
             <div class="climate-map-legend__heading">K&iacute;ch th&#432;&#7899;c &mdash; ng&agrave;y n&oacute;ng</div>
             <div class="climate-map-legend__row">
@@ -596,9 +747,9 @@ def render_vietnam_reference_map(df: pd.DataFrame) -> None:
 
     for point in points:
         temp_val = float(point["temp"])
-        hot_val  = float(point["hot_days"])
-        color    = _temp_to_color(temp_val)
-        extreme  = _is_extreme(point)
+        hot_val = float(point["hot_days"])
+        color = _temp_to_color(temp_val)
+        extreme = _is_extreme(point)
 
         # Radius: 10–26 px scaled by hot days
         radius = 10 + (hot_val - hot_min) / hot_rng * 16
@@ -640,7 +791,6 @@ def render_vietnam_reference_map(df: pd.DataFrame) -> None:
     st_folium(m, height=560, use_container_width=True, returned_objects=[])
 
 
-
 def render_overview_regions_tab(placeholder_box, filters: dict[str, object] | None = None) -> None:
     active_filters = filters or {
         "region": ALL_REGIONS_LABEL,
@@ -659,25 +809,12 @@ def render_overview_regions_tab(placeholder_box, filters: dict[str, object] | No
 
     left, right = st.columns([1.35, 1])
     with left:
+        st.markdown(
+            '<div class="section-title" style="margin-top: 0; margin-bottom: 4px;">'
+            'Bản đồ các tỉnh/thành</div>',
+            unsafe_allow_html=True,
+        )
         render_vietnam_reference_map(filtered_df)
     with right:
-        placeholder_box(
-            "Hồ sơ khí hậu theo vùng",
-            "Biểu đồ sẽ được bổ sung: bảng tóm tắt đặc trưng nhiệt, mưa, ẩm và mùa khí hậu.",
-            kicker="Tổng hợp",
-        )
-        st.write("")
-        placeholder_box(
-            "Xếp hạng khác biệt vùng",
-            "Biểu đồ sẽ được bổ sung: mức tương phản giữa các vùng trong giai đoạn được chọn.",
-            kicker="So sánh",
-        )
-
-    st.markdown('<div class="section-title">Khung phân tích vùng</div>', unsafe_allow_html=True)
-    cols = st.columns(3)
-    with cols[0]:
-        placeholder_box("Phân bố điểm tham chiếu", "Biểu đồ sẽ được bổ sung.")
-    with cols[1]:
-        placeholder_box("Tín hiệu khí hậu nổi bật", "Biểu đồ sẽ được bổ sung.")
-    with cols[2]:
-        placeholder_box("Ghi chú học thuật", "Container dành cho nhận xét và diễn giải sau khi có dữ liệu.")
+        render_yearly_trend_chart(filtered_df, active_filters)
+        render_location_ranking_bar_chart(filtered_df, active_filters)

@@ -4,7 +4,7 @@
 
 Dashboard được thiết kế như một khung phân tích học thuật cho chủ đề:
 
-> Phân tích và so sánh đặc điểm khí hậu giữa 7 nhóm vùng và 20 điểm tham chiếu tại Việt Nam trong giai đoạn 1991-2025.
+> Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu tại Việt Nam trong giai đoạn 1991-2025.
 
 Ở giai đoạn hiện tại, dashboard chỉ dựng sườn giao diện. Các vùng trực quan hóa được để dưới dạng placeholder để có thể thay bằng biểu đồ thật khi hoàn thiện phần đọc dữ liệu, xử lý dữ liệu và phân tích.
 
@@ -26,28 +26,31 @@ Dashboard được thiết kế như một khung phân tích học thuật cho c
 - Sidebar dùng `st.radio` để chọn tab đang hiển thị, nhưng CSS ẩn ô tròn radio mặc định để tab nhìn như nút điều hướng.
 - Tab được trình bày full-width, cùng chiều ngang; tab đang chọn dùng màu xanh dương chính `#1E3A5F`.
 - Bộ lọc hiện có: `Vùng`, `Địa điểm`, `Giai đoạn phân tích`.
-- Các vùng hiển thị bằng tiếng Việt theo mapping:
-  - `Central Highlands`: `Tây Nguyên`
-  - `Mekong Delta`: `Đồng bằng sông Cửu Long`
-  - `South Central Coast`: `Duyên hải Nam Trung Bộ`
-  - `Central`: `Miền Trung`
-  - `North`: `Miền Bắc`
-  - `Southeast`: `Đông Nam Bộ`
-  - `North Central`: `Bắc Trung Bộ`
+- Các vùng trong dataset mới gồm 6 nhóm, hiển thị trực tiếp bằng tiếng Việt:
+  - `Bắc Trung Bộ`
+  - `Nam Trung Bộ`
+  - `Trung du và miền núi phía Bắc`
+  - `Đông Nam Bộ`
+  - `Đồng bằng sông Cửu Long`
+  - `Đồng bằng sông Hồng`
 - Khi chọn một vùng, danh sách `Địa điểm` chỉ hiển thị các điểm tham chiếu thuộc vùng đó.
-- Bộ lọc hiện chỉ phục vụ bố cục và ngữ cảnh hiển thị KPI, chưa liên kết với dữ liệu thật.
+- Bộ lọc đang được dùng cho tab Tổng quan để lọc KPI và bản đồ theo `Vùng`, `Địa điểm` và `Giai đoạn phân tích`.
 
 ## KPI Tab Tổng Quan
 
 Tab Tổng quan có 5 KPI card đổi ý nghĩa theo phạm vi filter:
 
-- Khi chọn `Tất cả 7 nhóm vùng` và không chọn địa điểm: KPI là xếp hạng toàn quốc, ví dụ vùng nóng nhất, vùng mưa nhiều nhất, vùng ẩm nhất.
+- Khi chọn `Tất cả 6 nhóm vùng` và không chọn địa điểm: KPI là xếp hạng toàn quốc, ví dụ vùng nóng nhất, vùng mưa nhiều nhất, vùng ẩm nhất.
 - Khi chọn một vùng và không chọn địa điểm: KPI là đặc điểm khí hậu của vùng đang chọn.
 - Khi chọn một hoặc nhiều địa điểm: KPI là đặc điểm khí hậu của điểm tham chiếu hoặc nhóm điểm đang chọn.
 
 Tab Tổng quan hiện đã đọc dữ liệu thật từ `data/nasa_power_vietnam_daily_clean.csv` để tính 5 KPI và tooltip bản đồ. Các chỉ số dùng các cột `T2M`, `PRECTOTCORR`, `RH2M`, `hot_day`, `heavy_rain_day`, có áp dụng filter `Vùng`, `Địa điểm` và `Giai đoạn phân tích`.
 
-Bản đồ trong tab Tổng quan được render bằng `folium` và `streamlit-folium`, dùng các điểm tham chiếu thật từ NASA POWER. Chú thích bản đồ được nhúng bằng HTML/CSS gọn trong góc phải, giải thích màu theo nhiệt độ, kích thước theo số ngày nóng và vòng cảnh báo cực đoan.
+Cột phải của tab Tổng quan có line chart xu hướng theo năm, cho phép chọn `Nhiệt độ`, `Độ ẩm` hoặc `Lượng mưa`; biểu đồ dùng cùng filter sidebar với KPI và bản đồ.
+
+Bên dưới line chart là bar ngang xếp hạng địa điểm. Trục y là `Tỉnh/thành`, trục x là biến được chọn (`Nhiệt độ`, `Độ ẩm`, `Lượng mưa`); mặc định hiển thị top 5 giảm dần, còn khi sidebar chọn địa điểm thì hiển thị các địa điểm đang lọc. Các placeholder dưới cùng của tab Tổng quan đã được bỏ để tập trung vào KPI, bản đồ và hai biểu đồ bên phải.
+
+Bản đồ trong tab Tổng quan được render bằng `folium` và `streamlit-folium`, dùng các điểm tham chiếu thật từ NASA POWER. Chú thích bản đồ được nhúng bằng HTML/CSS gọn trong góc phải, giải thích màu theo nhiệt độ, kích thước theo số ngày nóng và cảnh báo cực đoan.
 
 ## Bảng màu
 
