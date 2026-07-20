@@ -33,6 +33,24 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
+            @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+            html, body, .stApp {{
+                font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            }}
+
+            p, h1, h2, h3, h4, h5, h6, label, input, button, select, textarea {{
+                font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            }}
+
+            [data-testid="stIcon"],
+            [data-testid="stSidebarCollapseButton"],
+            [data-testid="stSidebarCollapseButton"] *,
+            [data-testid="stHeader"] * {{
+                font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+                color: #334155 !important;
+            }}
+
             :root {{
                 --primary: {PRIMARY};
                 --secondary: {SECONDARY};
