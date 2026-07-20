@@ -1,12 +1,12 @@
 import streamlit as st
 
 from sidebar import inject_sidebar_css, render_sidebar
-from tabs.ai_assistant import render_ai_assistant_tab
-from tabs.extreme_weather import render_extreme_weather_tab
-from tabs.meteorological_factors import render_meteorological_factors_tab
-from tabs.overview_regions import render_overview_regions_tab
-from tabs.rainfall_humidity import render_rainfall_humidity_tab
-from tabs.temperature_comparison import render_temperature_comparison_tab
+from tabs.tab_1_overview_regions import render_overview_regions_tab
+from tabs.tab_2_temperature_comparison import render_temperature_comparison_tab
+from tabs.tab_3_rainfall_humidity import render_rainfall_humidity_tab
+from tabs.tab_4_meteorological_factors import render_meteorological_factors_tab
+from tabs.tab_5_extreme_weather import render_extreme_weather_tab
+from tabs.tab_6_ai_assistant import render_ai_assistant_tab
 
 
 PRIMARY = "#1E3A5F"
