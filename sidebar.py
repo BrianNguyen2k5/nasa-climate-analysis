@@ -1,40 +1,55 @@
 import streamlit as st
 
 
-REGIONS = [
-    "Tất cả 7 nhóm vùng",
-    "Tây Bắc",
-    "Đông Bắc",
-    "Đồng bằng Bắc Bộ",
-    "Bắc Trung Bộ",
-    "Nam Trung Bộ",
-    "Tây Nguyên",
-    "Nam Bộ",
-]
+REGION_VIETNAMESE = {
+    "Central Highlands": "Tây Nguyên",
+    "Mekong Delta": "Đồng bằng sông Cửu Long",
+    "South Central Coast": "Duyên hải Nam Trung Bộ",
+    "Central": "Miền Trung",
+    "North": "Miền Bắc",
+    "Southeast": "Đông Nam Bộ",
+    "North Central": "Bắc Trung Bộ",
+}
 
-REFERENCE_POINTS = [
-    "Hà Nội",
-    "Lào Cai",
-    "Điện Biên",
-    "Lạng Sơn",
-    "Hải Phòng",
-    "Thanh Hóa",
-    "Nghệ An",
-    "Huế",
-    "Đà Nẵng",
-    "Quảng Ngãi",
-    "Nha Trang",
-    "Phan Thiết",
-    "Kon Tum",
-    "Pleiku",
-    "Buôn Ma Thuột",
-    "Đà Lạt",
-    "TP. Hồ Chí Minh",
-    "Cần Thơ",
-    "Cà Mau",
-    "Phú Quốc",
-]
+LOCATION_VIETNAMESE = {
+    "Buon Ma Thuot": "Buôn Ma Thuột",
+    "Ca Mau": "Cà Mau",
+    "Can Tho": "Cần Thơ",
+    "Chau Doc": "Châu Đốc",
+    "Da Lat": "Đà Lạt",
+    "Da Nang": "Đà Nẵng",
+    "Dien Bien Phu": "Điện Biên Phủ",
+    "Dong Hoi": "Đồng Hới",
+    "Ha Noi": "Hà Nội",
+    "Hai Phong": "Hải Phòng",
+    "Ho Chi Minh City": "TP. Hồ Chí Minh",
+    "Hue": "Huế",
+    "Lao Cai": "Lào Cai",
+    "Nha Trang": "Nha Trang",
+    "Phan Rang-Thap Cham": "Phan Rang - Tháp Chàm",
+    "Phu Quoc": "Phú Quốc",
+    "Pleiku": "Pleiku",
+    "Quy Nhon": "Quy Nhơn",
+    "Vinh": "Vinh",
+    "Vung Tau": "Vũng Tàu",
+}
 
+LOCATIONS_BY_REGION = {
+    "North": ["Ha Noi", "Lao Cai", "Dien Bien Phu", "Hai Phong"],
+    "North Central": ["Dong Hoi", "Vinh"],
+    "Central": ["Da Nang", "Hue"],
+    "South Central Coast": ["Nha Trang", "Phan Rang-Thap Cham", "Quy Nhon"],
+    "Central Highlands": ["Buon Ma Thuot", "Da Lat", "Pleiku"],
+    "Southeast": ["Ho Chi Minh City", "Vung Tau"],
+    "Mekong Delta": ["Can Tho", "Ca Mau", "Chau Doc", "Phu Quoc"],
+}
+
+LOCATIONS_BY_REGION_VN = {
+    REGION_VIETNAMESE.get(region, region): [LOCATION_VIETNAMESE.get(location, location) for location in locations]
+    for region, locations in LOCATIONS_BY_REGION.items()
+}
+
+ALL_REGIONS_LABEL = "Tất cả 7 nhóm vùng"
 NAV_ITEMS = [
     "Tổng quan",
     "Nhiệt độ",
@@ -54,10 +69,7 @@ def inject_sidebar_css() -> None:
                 border-right: 1px solid var(--border);
             }
 
-            [data-testid="stSidebar"] > div:first-child {
-                padding-top: 0;
-            }
-
+            [data-testid="stSidebar"] > div:first-child,
             [data-testid="stSidebarUserContent"] {
                 padding-top: 0;
             }
@@ -200,18 +212,37 @@ def inject_sidebar_css() -> None:
     )
 
 
-def render_sidebar() -> str:
+def get_locations_for_region(region: str) -> list[str]:
+    if region == ALL_REGIONS_LABEL:
+        return [location for locations in LOCATIONS_BY_REGION_VN.values() for location in locations]
+    return LOCATIONS_BY_REGION_VN.get(region, [])
+
+
+def render_sidebar() -> dict[str, object]:
     with st.sidebar:
         st.title("Vietnam Climate Explorer")
         selected_tab = st.radio("Dashboard", NAV_ITEMS, label_visibility="collapsed")
 
-        st.selectbox("Vùng", REGIONS)
-        st.multiselect("Địa điểm", REFERENCE_POINTS, default=[])
-        st.slider(
+        selected_region = st.selectbox(
+            "Vùng",
+            [ALL_REGIONS_LABEL, *LOCATIONS_BY_REGION_VN.keys()],
+        )
+        selected_locations = st.multiselect(
+            "Địa điểm",
+            get_locations_for_region(selected_region),
+            default=[],
+        )
+        selected_period = st.slider(
             "Giai đoạn phân tích",
             min_value=1991,
             max_value=2025,
             value=(1991, 2025),
             label_visibility="collapsed",
         )
-        return selected_tab
+
+        return {
+            "selected_tab": selected_tab,
+            "region": selected_region,
+            "locations": selected_locations,
+            "period": selected_period,
+        }

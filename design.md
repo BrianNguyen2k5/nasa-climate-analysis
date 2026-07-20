@@ -26,8 +26,28 @@ Dashboard được thiết kế như một khung phân tích học thuật cho c
 - Sidebar dùng `st.radio` để chọn tab đang hiển thị, nhưng CSS ẩn ô tròn radio mặc định để tab nhìn như nút điều hướng.
 - Tab được trình bày full-width, cùng chiều ngang; tab đang chọn dùng màu xanh dương chính `#1E3A5F`.
 - Bộ lọc hiện có: `Vùng`, `Địa điểm`, `Giai đoạn phân tích`.
-- Thanh trượt giai đoạn phân tích dùng màu xanh dương cho track và nút kéo; chữ năm giữ màu chữ chính, không chuyển sang màu xanh.
-- Bộ lọc hiện chỉ phục vụ bố cục, chưa liên kết với dữ liệu hoặc biểu đồ.
+- Các vùng hiển thị bằng tiếng Việt theo mapping:
+  - `Central Highlands`: `Tây Nguyên`
+  - `Mekong Delta`: `Đồng bằng sông Cửu Long`
+  - `South Central Coast`: `Duyên hải Nam Trung Bộ`
+  - `Central`: `Miền Trung`
+  - `North`: `Miền Bắc`
+  - `Southeast`: `Đông Nam Bộ`
+  - `North Central`: `Bắc Trung Bộ`
+- Khi chọn một vùng, danh sách `Địa điểm` chỉ hiển thị các điểm tham chiếu thuộc vùng đó.
+- Bộ lọc hiện chỉ phục vụ bố cục và ngữ cảnh hiển thị KPI, chưa liên kết với dữ liệu thật.
+
+## KPI Tab Tổng Quan
+
+Tab Tổng quan có 5 KPI card đổi ý nghĩa theo phạm vi filter:
+
+- Khi chọn `Tất cả 7 nhóm vùng` và không chọn địa điểm: KPI là xếp hạng toàn quốc, ví dụ vùng nóng nhất, vùng mưa nhiều nhất, vùng ẩm nhất.
+- Khi chọn một vùng và không chọn địa điểm: KPI là đặc điểm khí hậu của vùng đang chọn.
+- Khi chọn một hoặc nhiều địa điểm: KPI là đặc điểm khí hậu của điểm tham chiếu hoặc nhóm điểm đang chọn.
+
+Tab Tổng quan hiện đã đọc dữ liệu thật từ `data/nasa_power_vietnam_daily_clean.csv` để tính 5 KPI và tooltip bản đồ. Các chỉ số dùng các cột `T2M`, `PRECTOTCORR`, `RH2M`, `hot_day`, `heavy_rain_day`, có áp dụng filter `Vùng`, `Địa điểm` và `Giai đoạn phân tích`.
+
+Bản đồ chữ S trong tab Tổng quan được render bằng `streamlit.components.v1.html()` để SVG/HTML không bị hiển thị thành text trong Streamlit.
 
 ## Bảng màu
 
@@ -64,4 +84,4 @@ Quy ước làm nhóm:
 - Thay `placeholder_box(...)` bằng biểu đồ thật trong từng file tab.
 - Giữ sidebar làm nguồn trạng thái filter chung.
 - Tách các hàm đọc dữ liệu, tiền xử lý và tính chỉ số sang module riêng để `app.py` chỉ giữ vai trò điều phối giao diện.
-- Nếu cần truyền giá trị filter vào từng tab, tạo một cấu trúc `filters` trong `sidebar.py` hoặc `app.py` sau khi nhóm thống nhất giao diện hàm.
+- Khi có dữ liệu thật, thay các KPI placeholder trong tab Tổng quan bằng kết quả tính toán theo `region`, `locations` và `period` từ `sidebar.py`.
