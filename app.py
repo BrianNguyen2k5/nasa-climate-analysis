@@ -318,7 +318,7 @@ def render_active_tab(filters: dict[str, object]) -> None:
     if selected_tab == "Tổng quan":
         render_overview_regions_tab(placeholder_box, filters)
     elif selected_tab == "Nhiệt độ":
-        render_temperature_comparison_tab(placeholder_box)
+        render_temperature_comparison_tab(placeholder_box, filters)
     elif selected_tab == "Mưa và độ ẩm":
         render_rainfall_humidity_tab(placeholder_box)
     elif selected_tab == "Yếu tố khí tượng":

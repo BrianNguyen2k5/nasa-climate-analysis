@@ -1,14 +1,5 @@
 import streamlit as st
 
-REGION_VIETNAMESE = {
-    "Bắc Trung Bộ": "Bắc Trung Bộ",
-    "Nam Trung Bộ": "Nam Trung Bộ",
-    "Trung du và miền núi phía Bắc": "Trung du và miền núi phía Bắc",
-    "Đông Nam Bộ": "Đông Nam Bộ",
-    "Đồng bằng sông Cửu Long": "Đồng bằng sông Cửu Long",
-    "Đồng bằng sông Hồng": "Đồng bằng sông Hồng",
-}
-
 LOCATION_VIETNAMESE = {
     "Buon Ma Thuot": "Buôn Ma Thuột",
     "Ca Mau": "Cà Mau",
@@ -33,18 +24,42 @@ LOCATION_VIETNAMESE = {
 }
 
 LOCATIONS_BY_REGION = {
-    "Bắc Trung Bộ": ["Dong Hoi", "Hue", "Vinh"],
-    "Nam Trung Bộ": ["Buon Ma Thuot", "Da Lat", "Da Nang", "Nha Trang", "Phan Rang-Thap Cham", "Pleiku", "Quy Nhon"],
     "Trung du và miền núi phía Bắc": ["Dien Bien Phu", "Lao Cai"],
-    "Đông Nam Bộ": ["Ho Chi Minh City", "Vung Tau"],
-    "Đồng bằng sông Cửu Long": ["Ca Mau", "Can Tho", "Chau Doc", "Phu Quoc"],
     "Đồng bằng sông Hồng": ["Ha Noi", "Hai Phong"],
+    "Bắc Trung Bộ": ["Dong Hoi", "Hue", "Vinh"],
+    "Nam Trung Bộ": [
+        "Buon Ma Thuot",
+        "Da Lat",
+        "Da Nang",
+        "Nha Trang",
+        "Phan Rang-Thap Cham",
+        "Pleiku",
+        "Quy Nhon",
+    ],
+    "Đông Nam Bộ": ["Ho Chi Minh City", "Vung Tau"],
+    "Đồng bằng sông Cửu Long": [
+        "Ca Mau",
+        "Can Tho",
+        "Chau Doc",
+        "Phu Quoc",
+    ],
 }
 
-# Alias for backwards compatibility if needed
-REFERENCE_POINTS = LOCATIONS_BY_REGION
-REGION_KEYS = list(LOCATIONS_BY_REGION.keys())
+REGION_ORDER = list(LOCATIONS_BY_REGION.keys())
 
+REGION_KEYS = list(REGION_ORDER)
+REGION_VIETNAMESE = {region: region for region in REGION_ORDER}
+REFERENCE_POINTS = LOCATIONS_BY_REGION
+
+LOCATIONS_BY_REGION_VN = {
+    region: [
+        LOCATION_VIETNAMESE.get(location, location)
+        for location in locations
+    ]
+    for region, locations in LOCATIONS_BY_REGION.items()
+}
+
+ALL_REGIONS_LABEL = "Tất cả 6 nhóm vùng"
 NAV_ITEMS = [
     "Tổng quan",
     "Nhiệt độ",
