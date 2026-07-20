@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 
 from sidebar import inject_sidebar_css, render_sidebar
 from tabs.ai_assistant import render_ai_assistant_tab
