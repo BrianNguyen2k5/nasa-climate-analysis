@@ -1,50 +1,49 @@
 import streamlit as st
 
-REFERENCE_POINTS = {
-    "Central Highlands": [
-        "Buon Ma Thuot",
-        "Da Lat",
-        "Pleiku",
-    ],
-    "Mekong Delta": [
-        "Ca Mau",
-        "Chau Doc",
-        "Phu Quoc",
-        "Can Tho",
-    ],
-    "South Central Coast": [
-        "Nha Trang",
-        "Phan Rang-Thap Cham",
-        "Quy Nhon",
-        "Da Nang",
-    ],
-    "North": [
-        "Dien Bien Phu",
-        "Ha Noi",
-        "Hai Phong",
-        "Lao Cai",
-    ],
-    "Southeast": [
-        "Ho Chi Minh City",
-        "Vung Tau",
-    ],
-    "North Central": [
-        "Dong Hoi",
-        "Vinh",
-        "Hue",
-    ],
+REGION_VIETNAMESE = {
+    "Bắc Trung Bộ": "Bắc Trung Bộ",
+    "Nam Trung Bộ": "Nam Trung Bộ",
+    "Trung du và miền núi phía Bắc": "Trung du và miền núi phía Bắc",
+    "Đông Nam Bộ": "Đông Nam Bộ",
+    "Đồng bằng sông Cửu Long": "Đồng bằng sông Cửu Long",
+    "Đồng bằng sông Hồng": "Đồng bằng sông Hồng",
 }
 
-REGION_LABELS = {
-    "Central Highlands": "Tây Nguyên",
-    "Mekong Delta": "Đồng bằng sông Cửu Long",
-    "South Central Coast": "Duyên hải Nam Trung Bộ",
-    "North": "Miền Bắc",
-    "Southeast": "Đông Nam Bộ",
-    "North Central": "Bắc Trung Bộ",
+LOCATION_VIETNAMESE = {
+    "Buon Ma Thuot": "Buôn Ma Thuột",
+    "Ca Mau": "Cà Mau",
+    "Can Tho": "Cần Thơ",
+    "Chau Doc": "Châu Đốc",
+    "Da Lat": "Đà Lạt",
+    "Da Nang": "Đà Nẵng",
+    "Dien Bien Phu": "Điện Biên Phủ",
+    "Dong Hoi": "Đồng Hới",
+    "Ha Noi": "Hà Nội",
+    "Hai Phong": "Hải Phòng",
+    "Ho Chi Minh City": "TP. Hồ Chí Minh",
+    "Hue": "Huế",
+    "Lao Cai": "Lào Cai",
+    "Nha Trang": "Nha Trang",
+    "Phan Rang-Thap Cham": "Phan Rang - Tháp Chàm",
+    "Phu Quoc": "Phú Quốc",
+    "Pleiku": "Pleiku",
+    "Quy Nhon": "Quy Nhơn",
+    "Vinh": "Vinh",
+    "Vung Tau": "Vũng Tàu",
 }
 
-REGION_KEYS = list(REFERENCE_POINTS.keys())
+LOCATIONS_BY_REGION = {
+    "Bắc Trung Bộ": ["Dong Hoi", "Hue", "Vinh"],
+    "Nam Trung Bộ": ["Buon Ma Thuot", "Da Lat", "Da Nang", "Nha Trang", "Phan Rang-Thap Cham", "Pleiku", "Quy Nhon"],
+    "Trung du và miền núi phía Bắc": ["Dien Bien Phu", "Lao Cai"],
+    "Đông Nam Bộ": ["Ho Chi Minh City", "Vung Tau"],
+    "Đồng bằng sông Cửu Long": ["Ca Mau", "Can Tho", "Chau Doc", "Phu Quoc"],
+    "Đồng bằng sông Hồng": ["Ha Noi", "Hai Phong"],
+}
+
+# Alias for backwards compatibility if needed
+REFERENCE_POINTS = LOCATIONS_BY_REGION
+REGION_KEYS = list(LOCATIONS_BY_REGION.keys())
 
 NAV_ITEMS = [
     "Tổng quan",
@@ -325,7 +324,7 @@ def _get_available_locations() -> list[str]:
     ]
     locs = []
     for r_key in selected_r_keys:
-        locs.extend(REFERENCE_POINTS.get(r_key, []))
+        locs.extend(LOCATIONS_BY_REGION.get(r_key, []))
     return locs
 
 
@@ -344,14 +343,14 @@ def _on_region_individual_change() -> None:
 
 def _on_location_select_all_change() -> None:
     new_val = st.session_state.get("chk_loc_select_all", False)
-    for loc in _get_available_locations():
-        st.session_state[f"chk_loc_{loc}"] = new_val
+    for loc_key in _get_available_locations():
+        st.session_state[f"chk_loc_{loc_key}"] = new_val
 
 
 def _on_location_individual_change() -> None:
     avail_locs = _get_available_locations()
     all_checked = (
-        all(st.session_state.get(f"chk_loc_{loc}", False) for loc in avail_locs)
+        all(st.session_state.get(f"chk_loc_{loc_key}", False) for loc_key in avail_locs)
         if avail_locs
         else False
     )
@@ -395,15 +394,15 @@ def render_sidebar() -> str:
             # Mặc định chọn tất cả các địa điểm/tỉnh khi mới mở dashboard
             st.session_state.chk_loc_select_all = True
             for r_key in REGION_KEYS:
-                for loc in REFERENCE_POINTS[r_key]:
-                    st.session_state[f"chk_loc_{loc}"] = True
+                for loc_key in LOCATIONS_BY_REGION[r_key]:
+                    st.session_state[f"chk_loc_{loc_key}"] = True
 
         selected_region_keys = [
             r_key
             for r_key in REGION_KEYS
             if st.session_state.get(f"chk_region_{r_key}", False)
         ]
-        st.session_state.selected_regions = [REGION_LABELS[r_key] for r_key in selected_region_keys]
+        st.session_state.selected_regions = selected_region_keys
         st.session_state.selected_region_keys = selected_region_keys
 
         region_count = len(selected_region_keys)
@@ -423,7 +422,7 @@ def render_sidebar() -> str:
 
             for r_key in REGION_KEYS:
                 st.checkbox(
-                    REGION_LABELS[r_key],
+                    REGION_VIETNAMESE.get(r_key, r_key),
                     key=f"chk_region_{r_key}",
                     on_change=_on_region_individual_change,
                 )
@@ -440,14 +439,14 @@ def render_sidebar() -> str:
         # Sync location select_all state
         if total_avail > 0:
             st.session_state.chk_loc_select_all = all(
-                st.session_state.get(f"chk_loc_{loc}", False) for loc in available_locations
+                st.session_state.get(f"chk_loc_{loc_key}", False) for loc_key in available_locations
             )
         else:
             st.session_state.chk_loc_select_all = False
 
         selected_locations = [
-            loc for loc in available_locations
-            if st.session_state.get(f"chk_loc_{loc}", False)
+            loc_key for loc_key in available_locations
+            if st.session_state.get(f"chk_loc_{loc_key}", False)
         ]
         st.session_state.selected_reference_points = selected_locations
 
@@ -471,10 +470,10 @@ def render_sidebar() -> str:
                     unsafe_allow_html=True,
                 )
 
-                for loc in available_locations:
+                for loc_key in available_locations:
                     st.checkbox(
-                        loc,
-                        key=f"chk_loc_{loc}",
+                        LOCATION_VIETNAMESE.get(loc_key, loc_key),
+                        key=f"chk_loc_{loc_key}",
                         on_change=_on_location_individual_change,
                     )
 
