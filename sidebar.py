@@ -200,18 +200,23 @@ def inject_sidebar_css() -> None:
     )
 
 
-def render_sidebar() -> str:
+def render_sidebar() -> tuple[str, dict[str, object]]:
     with st.sidebar:
         st.title("Vietnam Climate Explorer")
         selected_tab = st.radio("Dashboard", NAV_ITEMS, label_visibility="collapsed")
 
-        st.selectbox("Vùng", REGIONS)
-        st.multiselect("Địa điểm", REFERENCE_POINTS, default=[])
-        st.slider(
+        selected_region = st.selectbox("Vùng", REGIONS)
+        selected_locations = st.multiselect("Địa điểm", REFERENCE_POINTS, default=[])
+        selected_year_range = st.slider(
             "Giai đoạn phân tích",
             min_value=1991,
             max_value=2025,
             value=(1991, 2025),
             label_visibility="collapsed",
         )
-        return selected_tab
+        filters = {
+            "selected_region": selected_region,
+            "selected_locations": selected_locations,
+            "selected_year_range": selected_year_range,
+        }
+        return selected_tab, filters

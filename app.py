@@ -1,3 +1,6 @@
+from pathlib import Path
+
+import pandas as pd
 import streamlit as st
 
 from sidebar import inject_sidebar_css, render_sidebar
@@ -18,6 +21,7 @@ CARD = "#FFFFFF"
 TEXT = "#1F2937"
 MUTED = "#64748B"
 BORDER = "#E2E8F0"
+DATA_PATH = Path(__file__).parent / "data" / "nasa_power_vietnam_daily_clean.csv"
 
 
 def configure_page() -> None:
@@ -213,6 +217,13 @@ def placeholder_box(title: str, description: str, kicker: str = "Placeholder", t
     )
 
 
+@st.cache_data(show_spinner=False)
+def load_climate_data() -> pd.DataFrame:
+    if not DATA_PATH.exists():
+        return pd.DataFrame()
+    return pd.read_csv(DATA_PATH, low_memory=False)
+
+
 def render_header() -> None:
     st.markdown(
         """
@@ -241,7 +252,7 @@ def render_metric_row() -> None:
         metric_card("Trạng thái dữ liệu", "Chưa nạp", "Dashboard vẫn chạy độc lập")
 
 
-def render_active_tab(selected_tab: str) -> None:
+def render_active_tab(selected_tab: str, filters: dict[str, object]) -> None:
     if selected_tab == "Tổng quan":
         render_overview_regions_tab(placeholder_box)
     elif selected_tab == "Nhiệt độ":
@@ -251,7 +262,7 @@ def render_active_tab(selected_tab: str) -> None:
     elif selected_tab == "Yếu tố khí tượng":
         render_meteorological_factors_tab(placeholder_box)
     elif selected_tab == "Thời tiết cực đoan":
-        render_extreme_weather_tab(placeholder_box)
+        render_extreme_weather_tab(placeholder_box, load_climate_data(), filters)
     else:
         render_ai_assistant_tab(placeholder_box)
 
@@ -260,10 +271,8 @@ def main() -> None:
     configure_page()
     inject_css()
     inject_sidebar_css()
-    selected_tab = render_sidebar()
-    render_header()
-    render_metric_row()
-    render_active_tab(selected_tab)
+    selected_tab, filters = render_sidebar()
+    render_active_tab(selected_tab, filters)
 
 
 if __name__ == "__main__":
