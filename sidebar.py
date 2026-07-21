@@ -74,16 +74,13 @@ def inject_sidebar_css() -> None:
     st.markdown(
         """
         <style>
-            /* Sidebar Container - Fixed Width 280px, No Resizing */
+            /* Sidebar Container */
             [data-testid="stSidebar"] {
                 background-color: #ffffff !important;
                 border-right: 1px solid #e2e8f0 !important;
-                width: 280px !important;
-                min-width: 280px !important;
-                max-width: 280px !important;
             }
 
-            /* Disable Sidebar Resizer Handle (Prevent user drag resizing) */
+            /* Keep the Sidebar Resizer Hidden */
             [data-testid="stSidebarResizer"],
             div[class*="stSidebarResizer"] {
                 display: none !important;
@@ -156,76 +153,97 @@ def inject_sidebar_css() -> None:
                 margin: 1.1rem 0 0.55rem 0;
             }
 
-            /* Navigation Items - Stretch 100% Full Width of Sidebar */
+            /* Navigation Items - Full Width Without Affecting Inner Wrappers */
             [data-testid="stSidebar"] [data-testid="stRadio"],
-            [data-testid="stSidebar"] [data-testid="stRadio"] > div,
-            [data-testid="stSidebar"] [data-testid="stRadio"] div,
             [data-testid="stSidebar"] [role="radiogroup"],
             [data-testid="stSidebar"] [role="radiogroup"] > div {
-                width: 110% !important;
-                box-sizing: border-box !important;
-            }
-
-            [data-testid="stSidebar"] [role="radiogroup"] {
-                gap: 6px !important;
-                display: flex !important;
-                flex-direction: column !important;
-            }
-
-            [data-testid="stSidebar"] [role="radiogroup"] label {
                 width: 100% !important;
                 max-width: 100% !important;
-                flex: 1 1 100% !important;
                 box-sizing: border-box !important;
-                min-height: 40px !important;
+            }
+
+            /* Stack Navigation Items Vertically */
+            [data-testid="stSidebar"] [role="radiogroup"] {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 6px !important;
+            }
+
+            /* Navigation Button */
+            [data-testid="stSidebar"] [role="radiogroup"] label {
+                position: relative !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                min-height: 42px !important;
+                box-sizing: border-box !important;
                 border: 1px solid #bbb !important;
                 border-radius: 8px !important;
-                padding: 8px 14px !important;
+                padding: 9px 14px !important;
                 margin: 0 !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: flex-start !important;
+                background-color: #ffffff !important;
                 cursor: pointer !important;
+                overflow: hidden !important;
                 box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02) !important;
-                transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+                transition:
+                    background-color 160ms ease,
+                    border-color 160ms ease,
+                    box-shadow 160ms ease,
+                    transform 160ms ease !important;
             }
 
-            /* Hide default radio circle */
-            [data-testid="stSidebar"] [role="radiogroup"] label input[type="radio"],
-            [data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {
-                display: none !important;
+            /* Hide Only the Native Radio Input */
+            [data-testid="stSidebar"] [role="radiogroup"] label input[type="radio"] {
+                position: absolute !important;
+                width: 1px !important;
+                height: 1px !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
             }
 
-            /* Inactive Text */
+            /* Keep the Text Container Inside the Button */
+            [data-testid="stSidebar"] [role="radiogroup"] label [data-testid="stMarkdownContainer"] {
+                width: 100% !important;
+                min-width: 0 !important;
+                display: block !important;
+            }
+
+            /* Inactive Navigation Text */
             [data-testid="stSidebar"] [role="radiogroup"] label p {
                 color: #334155 !important;
-                font-weight: 500 !important;
                 font-size: 15px !important;
-                line-height: 1.2 !important;
+                font-weight: 500 !important;
+                line-height: 1.25 !important;
                 margin: 0 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
                 transition: color 160ms ease !important;
             }
 
-            /* Hover state for unselected buttons: subtle background + border highlight */
+            /* Hover State */
             [data-testid="stSidebar"] [role="radiogroup"] label:hover {
-                background: #f1f5f9 !important;
+                background-color: #f1f5f9 !important;
                 border-color: #cbd5e1 !important;
-                transform: translateX(2px);
+                transform: translateX(2px) !important;
             }
 
             [data-testid="stSidebar"] [role="radiogroup"] label:hover p {
                 color: #0f172a !important;
             }
 
-            /* Active State: Primary Navy Pill with pure white text and soft elevation */
-            [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
-                background: #1e3a5f !important;
+            /* Active Navigation Item */
+            [data-testid="stSidebar"] [role="radiogroup"] label:has(input[type="radio"]:checked) {
+                background-color: #1e3a5f !important;
                 border-color: #1e3a5f !important;
                 box-shadow: 0 4px 12px -2px rgba(30, 58, 95, 0.28) !important;
                 transform: none !important;
             }
 
-            [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p {
+            /* Active Navigation Text */
+            [data-testid="stSidebar"] [role="radiogroup"] label:has(input[type="radio"]:checked) p {
                 color: #ffffff !important;
                 font-weight: 650 !important;
             }
@@ -333,27 +351,61 @@ def inject_sidebar_css() -> None:
     )
 
 
-def _get_available_locations() -> list[str]:
-    selected_r_keys = [
-        r_key for r_key in REGION_KEYS if st.session_state.get(f"chk_region_{r_key}", False)
+def _selected_region_keys_from_state() -> list[str]:
+    return [
+        region
+        for region in REGION_KEYS
+        if st.session_state.get(f"chk_region_{region}", False)
     ]
+
+
+def _get_available_locations() -> list[str]:
+    selected_r_keys = _selected_region_keys_from_state()
     locs = []
     for r_key in selected_r_keys:
         locs.extend(LOCATIONS_BY_REGION.get(r_key, []))
     return locs
 
 
+def _sync_locations_after_region_change(
+    previous_regions: set[str],
+    selected_regions: set[str],
+) -> None:
+    added_regions = selected_regions - previous_regions
+    removed_regions = previous_regions - selected_regions
+
+    for region in REGION_KEYS:
+        if region in added_regions:
+            for location in LOCATIONS_BY_REGION[region]:
+                st.session_state[f"chk_loc_{location}"] = True
+        elif region in removed_regions:
+            for location in LOCATIONS_BY_REGION[region]:
+                st.session_state[f"chk_loc_{location}"] = False
+
+    available_locations = _get_available_locations()
+    st.session_state.chk_loc_select_all = bool(available_locations) and all(
+        st.session_state.get(f"chk_loc_{location}", False)
+        for location in available_locations
+    )
+
+
 def _on_region_select_all_change() -> None:
     new_val = st.session_state.get("chk_region_select_all", False)
     for r_key in REGION_KEYS:
         st.session_state[f"chk_region_{r_key}"] = new_val
+        for loc_key in LOCATIONS_BY_REGION[r_key]:
+            st.session_state[f"chk_loc_{loc_key}"] = new_val
+    st.session_state.previous_selected_regions = list(REGION_KEYS) if new_val else []
+    st.session_state.chk_loc_select_all = new_val
 
 
 def _on_region_individual_change() -> None:
-    all_checked = all(
-        st.session_state.get(f"chk_region_{r_key}", False) for r_key in REGION_KEYS
-    )
-    st.session_state.chk_region_select_all = all_checked
+    previous_regions = set(st.session_state.get("previous_selected_regions", []))
+    selected_region_keys = _selected_region_keys_from_state()
+    selected_regions = set(selected_region_keys)
+    _sync_locations_after_region_change(previous_regions, selected_regions)
+    st.session_state.chk_region_select_all = len(selected_region_keys) == len(REGION_KEYS)
+    st.session_state.previous_selected_regions = selected_region_keys
 
 
 def _on_location_select_all_change() -> None:
@@ -411,6 +463,10 @@ def render_sidebar() -> dict[str, object]:
             for r_key in REGION_KEYS:
                 for loc_key in LOCATIONS_BY_REGION[r_key]:
                     st.session_state[f"chk_loc_{loc_key}"] = True
+
+            st.session_state.previous_selected_regions = list(REGION_KEYS)
+        elif "previous_selected_regions" not in st.session_state:
+            st.session_state.previous_selected_regions = _selected_region_keys_from_state()
 
         selected_region_keys = [
             r_key
