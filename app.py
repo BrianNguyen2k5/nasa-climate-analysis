@@ -85,7 +85,7 @@ def inject_css() -> None:
             }}
 
             .block-container {{
-                padding-top: 0.4rem;
+                padding-top: 3rem !important;
                 padding-bottom: 2.5rem;
                 padding-left: 1rem !important;
                 padding-right: 1rem !important;
@@ -329,7 +329,7 @@ def render_active_tab(filters: dict[str, object]) -> None:
     if selected_tab == "Tổng quan":
         render_overview_regions_tab(placeholder_box, filters)
     elif selected_tab == "Nhiệt độ":
-        render_temperature_comparison_tab(placeholder_box)
+        render_temperature_comparison_tab(placeholder_box, filters)
     elif selected_tab == "Mưa và độ ẩm":
         render_rainfall_humidity_tab(placeholder_box)
     elif selected_tab == "Yếu tố khí tượng":
@@ -352,7 +352,6 @@ def main() -> None:
         render_header("Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu")
     elif selected_tab == "Nhiệt độ":
         render_header("Phân tích đặc điểm nhiệt độ")
-        render_metric_row()
     elif selected_tab == "Mưa và độ ẩm":
         render_header("Phân tích đặc điểm mưa và độ ẩm")
         render_metric_row()
