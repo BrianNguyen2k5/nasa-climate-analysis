@@ -83,8 +83,8 @@ def inject_css() -> None:
             .block-container {{
                 padding-top: 0.4rem;
                 padding-bottom: 2.5rem;
-                padding-left: 1.5rem !important;
-                padding-right: 1.5rem !important;
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
                 max-width: 98% !important;
             }}
 
