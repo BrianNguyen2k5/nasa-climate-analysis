@@ -95,7 +95,7 @@ def inject_css() -> None:
                 border: 1px solid var(--border);
                 border-radius: 7px;
                 padding: 10px 18px;
-                margin-bottom: 8px;
+                margin-bottom: 6px;
             }}
 
             .eyebrow {{
@@ -112,14 +112,6 @@ def inject_css() -> None:
                 font-size: 1.25rem;
                 font-weight: 750;
                 line-height: 1.25;
-                margin: 0;
-            }}
-
-            .hero-subtitle {{
-                color: var(--muted);
-                font-size: 1rem;
-                line-height: 1.55;
-                max-width: 960px;
                 margin: 0;
             }}
 
