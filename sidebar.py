@@ -357,7 +357,7 @@ def _on_location_individual_change() -> None:
     st.session_state.chk_loc_select_all = all_checked
 
 
-def render_sidebar() -> str:
+def render_sidebar() -> dict[str, object]:
     with st.sidebar:
         # Branding Header (VietNam \n CLIMATE EXPLORER)
         st.markdown(
@@ -478,11 +478,17 @@ def render_sidebar() -> str:
                     )
 
         # --- Filter Thời gian ---
-        st.slider(
+        year_range = st.slider(
             "Thời gian",
             min_value=1991,
             max_value=2025,
             value=(1991, 2025),
         )
 
-        return selected_tab
+        return {
+            "selected_tab": selected_tab,
+            "selected_regions": st.session_state.get("selected_regions", []),
+            "selected_region_keys": st.session_state.get("selected_region_keys", []),
+            "selected_reference_points": st.session_state.get("selected_reference_points", []),
+            "year_range": year_range,
+        }

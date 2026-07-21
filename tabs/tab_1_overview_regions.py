@@ -128,16 +128,27 @@ def load_climate_data() -> pd.DataFrame:
 
 
 def filter_data(df: pd.DataFrame, filters: dict[str, object]) -> pd.DataFrame:
-    start_year, end_year = filters.get("period", (1991, 2025))
+    period = filters.get("year_range") or filters.get("period") or (1991, 2025)
+    start_year, end_year = period
     filtered = df[df["year"].between(int(start_year), int(end_year))]
 
-    region = str(filters.get("region", ALL_REGIONS_LABEL))
-    if region != ALL_REGIONS_LABEL:
-        filtered = filtered[filtered["region_vn"] == region]
+    regions = filters.get("selected_regions") or filters.get("selected_region_keys") or filters.get("region")
+    if isinstance(regions, str):
+        regions = [regions] if regions != ALL_REGIONS_LABEL else []
 
-    locations = filters.get("locations", [])
+    if isinstance(regions, list) and regions and len(regions) < len(REGION_VIETNAMESE):
+        filtered = filtered[
+            filtered["region_vn"].isin(regions) | filtered["region"].isin(regions)
+        ]
+
+    locations = filters.get("selected_reference_points") or filters.get("locations")
+    if isinstance(locations, str):
+        locations = [locations]
+
     if isinstance(locations, list) and locations:
-        filtered = filtered[filtered["location_vn"].isin(locations)]
+        filtered = filtered[
+            filtered["location_name"].isin(locations) | filtered["location_vn"].isin(locations)
+        ]
 
     return filtered
 
@@ -162,25 +173,41 @@ def _annual_location_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _scope_label(filters: dict[str, object]) -> str:
-    region = str(filters.get("region", ALL_REGIONS_LABEL))
-    locations = filters.get("locations", [])
+    locations = filters.get("selected_reference_points") or filters.get("locations") or []
+    if isinstance(locations, str):
+        locations = [locations]
+
+    regions = filters.get("selected_regions") or filters.get("selected_region_keys") or filters.get("region") or []
+    if isinstance(regions, str):
+        regions = [regions] if regions != ALL_REGIONS_LABEL else []
 
     if isinstance(locations, list) and len(locations) == 1:
-        return locations[0]
-    if isinstance(locations, list) and len(locations) > 1:
-        return f"{len(locations)} điểm tham chiếu"
-    if region != ALL_REGIONS_LABEL:
-        return region
+        loc_key = locations[0]
+        return LOCATION_VIETNAMESE.get(loc_key, loc_key)
+    if isinstance(locations, list) and 1 < len(locations) < 20:
+        return f"{len(locations)} tỉnh/thành"
+
+    if isinstance(regions, list) and len(regions) == 1:
+        reg_key = regions[0]
+        return REGION_VIETNAMESE.get(reg_key, reg_key)
+    if isinstance(regions, list) and 1 < len(regions) < len(REGION_VIETNAMESE):
+        return f"{len(regions)} vùng"
+
     return "Toàn quốc"
 
 
 def _kpi_mode(filters: dict[str, object]) -> str:
-    region = str(filters.get("region", ALL_REGIONS_LABEL))
-    locations = filters.get("locations", [])
+    locations = filters.get("selected_reference_points") or filters.get("locations") or []
+    if isinstance(locations, str):
+        locations = [locations]
 
-    if isinstance(locations, list) and locations:
+    regions = filters.get("selected_regions") or filters.get("selected_region_keys") or filters.get("region") or []
+    if isinstance(regions, str):
+        regions = [regions] if regions != ALL_REGIONS_LABEL else []
+
+    if isinstance(locations, list) and locations and len(locations) < 20:
         return "location"
-    if region != ALL_REGIONS_LABEL:
+    if isinstance(regions, list) and regions and len(regions) < len(REGION_VIETNAMESE):
         return "region"
     return "national"
 
@@ -347,8 +374,8 @@ def build_location_ranking(df: pd.DataFrame, variable: str, filters: dict[str, o
     ranking[label] = ranking[label].round(2)
     ranking = ranking.sort_values(label, ascending=False)
 
-    selected_locations = filters.get("locations", [])
-    if not isinstance(selected_locations, list) or not selected_locations:
+    selected_locations = filters.get("selected_reference_points") or filters.get("locations", [])
+    if not isinstance(selected_locations, list) or not selected_locations or len(selected_locations) == 20:
         ranking = ranking.head(5)
 
     return ranking
