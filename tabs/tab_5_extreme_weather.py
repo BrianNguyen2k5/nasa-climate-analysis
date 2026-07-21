@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import math
 from typing import Any
 
 import pandas as pd
@@ -17,39 +16,38 @@ BORDER = "#E2E8F0"
 MUTED = "#64748B"
 CARD = "#FFFFFF"
 
-ALL_REGIONS_LABEL = "Tất cả 7 nhóm vùng"
+ALL_REGIONS_LABEL = "Tất cả 6 nhóm vùng"
 REGION_ORDER = [
-    "Tây Bắc",
-    "Đông Bắc",
-    "Đồng bằng Bắc Bộ",
     "Bắc Trung Bộ",
     "Nam Trung Bộ",
-    "Tây Nguyên",
-    "Nam Bộ",
+    "Trung du và miền núi phía Bắc",
+    "Đông Nam Bộ",
+    "Đồng bằng sông Cửu Long",
+    "Đồng bằng sông Hồng",
 ]
 REGION_COLOR_MAP = {
-    "Tây Bắc": "#4C78A8",
-    "Đông Bắc": "#72B7B2",
-    "Đồng bằng Bắc Bộ": "#54A24B",
-    "Bắc Trung Bộ": "#ECA82C",
-    "Nam Trung Bộ": "#F58518",
-    "Tây Nguyên": "#B279A2",
-    "Nam Bộ": "#E45756",
+    "Bắc Trung Bộ": "#8B5CF6",
+    "Nam Trung Bộ": "#F59E0B",
+    "Trung du và miền núi phía Bắc": "#3B82F6",
+    "Đông Nam Bộ": "#EF4444",
+    "Đồng bằng sông Cửu Long": "#06B6D4",
+    "Đồng bằng sông Hồng": "#10B981",
 }
 HEATMAP_SCALE = [
-    [0.0, "#F8FAFC"],
-    [0.25, "#DCEFEF"],
-    [0.5, "#F4D7A1"],
-    [0.75, "#F3A46B"],
-    [1.0, "#D95F4F"],
+    [0.0, "#FFF7DA"],
+    [0.25, "#FDE7A6"],
+    [0.5, "#FDBA74"],
+    [0.75, "#FB7185"],
+    [1.0, "#E11D48"],
 ]
 PLOT_CONFIG = {"displayModeBar": False, "responsive": True}
+COMPACT_CHART_HEIGHT = 305
 
 LOCATION_ID_TO_REGION = {
-    "DBP": "Tây Bắc",
-    "LCA": "Đông Bắc",
-    "HAN": "Đồng bằng Bắc Bộ",
-    "HPH": "Đồng bằng Bắc Bộ",
+    "DBP": "Trung du và miền núi phía Bắc",
+    "LCA": "Trung du và miền núi phía Bắc",
+    "HAN": "Đồng bằng sông Hồng",
+    "HPH": "Đồng bằng sông Hồng",
     "VDH": "Bắc Trung Bộ",
     "VII": "Bắc Trung Bộ",
     "HUI": "Bắc Trung Bộ",
@@ -57,32 +55,38 @@ LOCATION_ID_TO_REGION = {
     "UIH": "Nam Trung Bộ",
     "CXR": "Nam Trung Bộ",
     "PRT": "Nam Trung Bộ",
-    "BMV": "Tây Nguyên",
-    "PXU": "Tây Nguyên",
-    "DLI": "Tây Nguyên",
-    "SGN": "Nam Bộ",
-    "VTG": "Nam Bộ",
-    "VCA": "Nam Bộ",
-    "CDO": "Nam Bộ",
-    "CAH": "Nam Bộ",
-    "PQC": "Nam Bộ",
+    "BMV": "Nam Trung Bộ",
+    "PXU": "Nam Trung Bộ",
+    "DLI": "Nam Trung Bộ",
+    "SGN": "Đông Nam Bộ",
+    "VTG": "Đông Nam Bộ",
+    "VCA": "Đồng bằng sông Cửu Long",
+    "CDO": "Đồng bằng sông Cửu Long",
+    "CAH": "Đồng bằng sông Cửu Long",
+    "PQC": "Đồng bằng sông Cửu Long",
 }
 RAW_REGION_TO_VI = {
-    "North": "Đồng bằng Bắc Bộ",
+    "Bắc Trung Bộ": "Bắc Trung Bộ",
+    "Nam Trung Bộ": "Nam Trung Bộ",
+    "Trung du và miền núi phía Bắc": "Trung du và miền núi phía Bắc",
+    "Đông Nam Bộ": "Đông Nam Bộ",
+    "Đồng bằng sông Cửu Long": "Đồng bằng sông Cửu Long",
+    "Đồng bằng sông Hồng": "Đồng bằng sông Hồng",
+    "North": "Đồng bằng sông Hồng",
     "North Central": "Bắc Trung Bộ",
     "Central": "Nam Trung Bộ",
     "South Central Coast": "Nam Trung Bộ",
-    "Central Highlands": "Tây Nguyên",
-    "Southeast": "Nam Bộ",
-    "Mekong Delta": "Nam Bộ",
+    "Central Highlands": "Nam Trung Bộ",
+    "Southeast": "Đông Nam Bộ",
+    "Mekong Delta": "Đồng bằng sông Cửu Long",
 }
 LOCATION_ID_TO_NAME = {
     "HAN": "Hà Nội",
     "LCA": "Lào Cai",
-    "DBP": "Điện Biên",
+    "DBP": "Điện Biên Phủ",
     "HPH": "Hải Phòng",
     "VDH": "Đồng Hới",
-    "VII": "Nghệ An",
+    "VII": "Vinh",
     "HUI": "Huế",
     "DAD": "Đà Nẵng",
     "UIH": "Quy Nhơn",
@@ -104,6 +108,7 @@ LOCATION_LABEL_TO_IDS = {
     "Lào Cai": ["LCA"],
     "Lao Cai": ["LCA"],
     "Điện Biên": ["DBP"],
+    "Điện Biên Phủ": ["DBP"],
     "Dien Bien Phu": ["DBP"],
     "Hải Phòng": ["HPH"],
     "Hai Phong": ["HPH"],
@@ -177,41 +182,108 @@ def inject_extreme_weather_css() -> None:
     st.markdown(
         """
         <style>
+            .block-container {
+                padding-top: 1.4rem !important;
+                padding-bottom: 0.8rem !important;
+                padding-left: 0.7rem !important;
+                padding-right: 0.7rem !important;
+                max-width: calc(100vw - 1.4rem) !important;
+                width: 100% !important;
+            }
+
+            .block-container [data-testid="stVerticalBlock"] {
+                gap: 1rem !important;
+            }
+
+            .block-container [data-testid="stVerticalBlockBorderWrapper"] {
+                background: #FFFFFF !important;
+                border: 1px solid rgba(226, 232, 240, 0.95) !important;
+                border-radius: 8px !important;
+                box-shadow: 0 10px 24px rgba(30, 58, 95, 0.07) !important;
+                padding: 0.95rem 1rem 0.65rem !important;
+            }
+
             .extreme-kpi-card {
-                background: #FFFFFF;
-                border: 1px solid #E2E8F0;
-                border-radius: 7px;
-                padding: 16px 18px;
                 min-height: 112px;
-                box-shadow: 0 1px 2px rgba(30, 58, 95, 0.04);
+                background: #FFFFFF;
+                border: 1px solid rgba(226, 232, 240, 0.95);
+                border-radius: 8px;
+                box-shadow: 0 10px 24px rgba(30, 58, 95, 0.07);
+                padding: 16px 22px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 16px;
+                box-sizing: border-box;
+                margin-bottom: 0.35rem;
+            }
+
+            .extreme-kpi-content {
+                min-width: 0;
             }
 
             .extreme-kpi-label {
-                color: #64748B;
-                font-size: 0.8rem;
-                font-weight: 680;
-                margin-bottom: 9px;
+                font-size: 0.92rem;
+                font-weight: 760;
+                line-height: 1.25;
+                margin-bottom: 18px;
+                white-space: nowrap;
+            }
+
+            .extreme-kpi-value-row {
+                display: flex;
+                align-items: baseline;
+                gap: 7px;
+                white-space: nowrap;
             }
 
             .extreme-kpi-value {
-                color: #1E3A5F;
-                font-size: 1.86rem;
-                font-weight: 760;
-                line-height: 1.05;
-                margin-bottom: 4px;
+                font-size: 2rem;
+                font-weight: 800;
+                letter-spacing: 0;
+                line-height: 1;
             }
 
             .extreme-kpi-unit {
-                color: #64748B;
-                font-size: 0.82rem;
-                font-weight: 600;
+                color: #1E3A5F;
+                font-size: 0.88rem;
+                font-weight: 700;
+            }
+
+            .extreme-kpi-icon {
+                width: 54px;
+                height: 54px;
+                border-radius: 999px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex: 0 0 auto;
+            }
+
+            .extreme-kpi-icon .material-symbols-rounded {
+                font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+                font-size: 31px;
+                font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 36;
+            }
+
+            .extreme-kpi-spacer {
+                height: 0.75rem;
             }
 
             .extreme-chart-title {
                 color: #1E3A5F;
                 font-size: 1rem;
-                font-weight: 720;
-                margin: 0 0 10px;
+                font-weight: 800;
+                line-height: 1.25;
+                margin: 0 0 12px;
+                white-space: normal;
+            }
+
+            .maplibregl-ctrl-attrib,
+            .maplibregl-ctrl-logo,
+            .mapboxgl-ctrl-attrib,
+            .mapboxgl-ctrl-logo {
+                display: none !important;
             }
         </style>
         """,
@@ -236,18 +308,39 @@ def _ensure_expected_columns(df: pd.DataFrame) -> pd.DataFrame:
 def _selected_regions(filters: dict[str, Any] | None) -> list[str]:
     if not filters:
         return []
-    value = filters.get("selected_regions", filters.get("selected_region"))
-    if value is None or value == ALL_REGIONS_LABEL:
+
+    value = (
+        filters.get("selected_regions")
+        or filters.get("selected_region_keys")
+        or filters.get("selected_region")
+        or filters.get("region")
+    )
+    if value is None:
         return []
     if isinstance(value, str):
+        if value == ALL_REGIONS_LABEL or value.startswith("Tất cả"):
+            return []
         return [value]
-    return [region for region in value if region != ALL_REGIONS_LABEL]
+    return [region for region in value if region and not str(region).startswith("Tất cả")]
+
+
+def _filter_has_region_selection(filters: dict[str, Any] | None) -> bool:
+    return bool(
+        filters
+        and any(key in filters for key in ("selected_regions", "selected_region_keys", "selected_region", "region"))
+    )
 
 
 def _selected_location_ids(filters: dict[str, Any] | None) -> list[str]:
     if not filters:
         return []
-    selected_locations = filters.get("selected_locations", [])
+
+    selected_locations = (
+        filters.get("selected_reference_points")
+        or filters.get("selected_locations")
+        or filters.get("locations")
+        or []
+    )
     if isinstance(selected_locations, str):
         selected_locations = [selected_locations]
 
@@ -257,6 +350,13 @@ def _selected_location_ids(filters: dict[str, Any] | None) -> list[str]:
     return sorted(set(location_ids))
 
 
+def _filter_has_location_selection(filters: dict[str, Any] | None) -> bool:
+    return bool(
+        filters
+        and any(key in filters for key in ("selected_reference_points", "selected_locations", "locations"))
+    )
+
+
 def _selected_years(df: pd.DataFrame, filters: dict[str, Any] | None) -> list[int]:
     available_years = pd.to_numeric(df.get("year"), errors="coerce").dropna()
     if available_years.empty:
@@ -264,7 +364,11 @@ def _selected_years(df: pd.DataFrame, filters: dict[str, Any] | None) -> list[in
 
     default_start = int(available_years.min())
     default_end = int(available_years.max())
-    year_range = None if not filters else filters.get("selected_year_range")
+    year_range = None if not filters else (
+        filters.get("year_range")
+        or filters.get("selected_year_range")
+        or filters.get("period")
+    )
 
     if isinstance(year_range, (tuple, list)) and len(year_range) == 2:
         start, end = sorted((int(year_range[0]), int(year_range[1])))
@@ -331,11 +435,19 @@ def prepare_filtered_climate_data(
     regions = _selected_regions(filters)
     if regions:
         df = df[df["region"].isin(regions)]
+    elif _filter_has_region_selection(filters) and (
+        filters.get("selected_regions") == [] or filters.get("selected_region_keys") == []
+    ):
+        df = df.iloc[0:0]
 
     location_ids = _selected_location_ids(filters)
     if location_ids:
         df = df[df["location_id"].isin(location_ids)]
-    elif filters and filters.get("selected_locations"):
+    elif _filter_has_location_selection(filters) and (
+        filters.get("selected_reference_points") == []
+        or filters.get("selected_locations") == []
+        or filters.get("locations") == []
+    ):
         df = df.iloc[0:0]
 
     years = _selected_years(df, filters)
@@ -429,7 +541,15 @@ def prepare_heatwave_event_table(filtered_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_dry_spell_event_table(filtered_df: pd.DataFrame) -> pd.DataFrame:
-    columns = ["location_id", "dry_spell_id", "dry_spell_length", "region", "location_name"]
+    columns = [
+        "location_id",
+        "dry_spell_id",
+        "dry_spell_length",
+        "dry_spell_start",
+        "dry_spell_end",
+        "region",
+        "location_name",
+    ]
     if filtered_df.empty or "date" not in filtered_df.columns or "location_id" not in filtered_df.columns:
         return pd.DataFrame(columns=columns)
 
@@ -453,6 +573,8 @@ def prepare_dry_spell_event_table(filtered_df: pd.DataFrame) -> pd.DataFrame:
 
     spell_table = dry_rows.groupby(["location_id", "dry_spell_id"], as_index=False).agg(
         dry_spell_length=("date", "size"),
+        dry_spell_start=("date", "min"),
+        dry_spell_end=("date", "max"),
         region=("region", "first"),
         location_name=("location_name", "first"),
     )
@@ -534,8 +656,7 @@ def create_hot_day_ranking_chart(
         x="hot_day_avg",
         y="region",
         orientation="h",
-        color="region",
-        color_discrete_map=REGION_COLOR_MAP,
+        color_discrete_sequence=["#F59E0B"],
         text="hot_day_label",
         custom_data=["region", "hot_day_avg", "location_count"],
         labels={"hot_day_avg": "Ngày nắng nóng TB/năm/địa điểm", "region": ""},
@@ -561,7 +682,7 @@ def create_hot_day_ranking_chart(
     max_value = float(ranking["hot_day_avg"].max())
     if max_value > 0:
         fig.update_xaxes(range=[0, max_value * 1.18])
-    return _base_chart_layout(fig, 390)
+    return _base_chart_layout(fig, COMPACT_CHART_HEIGHT)
 
 
 def _map_center_and_zoom(location_data: pd.DataFrame) -> tuple[dict[str, float], float]:
@@ -648,7 +769,26 @@ def create_heavy_rain_bubble_map(
             "Số ngày mưa lớn trung bình/năm: %{customdata[2]:.1f}<extra></extra>"
         ),
     )
-    return _base_chart_layout(fig, 390)
+    for trace in fig.data:
+        trace.legendrank = 1
+        if trace.name == "Trung du và miền núi phía Bắc":
+            trace.name = "Trung du và miền núi<br>phía Bắc"
+    fig = _base_chart_layout(fig, COMPACT_CHART_HEIGHT)
+    fig.update_layout(
+        margin=dict(l=8, r=172, t=8, b=28),
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.01,
+            title_text="Nhóm vùng",
+            bgcolor="rgba(255,255,255,0)",
+            font=dict(size=9),
+            tracegroupgap=8,
+        ),
+    )
+    return fig
 
 
 def _period_labels(years: pd.Series) -> pd.DataFrame:
@@ -704,7 +844,17 @@ def create_heatwave_heatmap(
             x=pivot.columns.tolist(),
             y=pivot.index.tolist(),
             colorscale=HEATMAP_SCALE,
-            colorbar=dict(title="Số đợt", thickness=12),
+            zmin=0,
+            zmax=6,
+            colorbar=dict(
+                title="Số đợt",
+                thickness=12,
+                len=0.82,
+                x=1.02,
+                tickmode="array",
+                tickvals=[0, 2, 4, 6],
+                ticktext=["0", "2", "4", "6"],
+            ),
             text=z_values,
             texttemplate="%{text:.1f}",
             hovertemplate=(
@@ -716,42 +866,123 @@ def create_heatwave_heatmap(
     )
     fig.update_xaxes(side="bottom", ticks="", gridcolor=CARD)
     fig.update_yaxes(ticks="", gridcolor=CARD)
-    return _base_chart_layout(fig, 390)
+    fig = _base_chart_layout(fig, COMPACT_CHART_HEIGHT)
+    fig.update_layout(margin=dict(l=8, r=58, t=8, b=42))
+    return fig
 
 
-def create_dry_spell_histogram(dry_spells: pd.DataFrame) -> go.Figure | None:
+def create_dry_spell_ranking_chart(dry_spells: pd.DataFrame) -> go.Figure | None:
     if dry_spells.empty:
         return None
 
-    event_count = len(dry_spells)
-    nbins = min(30, max(10, round(math.sqrt(event_count))))
-    fig = px.histogram(
-        dry_spells,
-        x="dry_spell_length",
-        nbins=nbins,
-        color_discrete_sequence=[SECONDARY],
-        labels={
-            "dry_spell_length": "Độ dài chuỗi ngày khô (ngày)",
-            "count": "Số chuỗi",
-        },
+    required_columns = {"region", "location_name", "dry_spell_length", "dry_spell_start", "dry_spell_end"}
+    if not required_columns.issubset(dry_spells.columns):
+        return None
+
+    ranking = dry_spells.dropna(subset=["location_name", "dry_spell_length"]).copy()
+    ranking["dry_spell_length"] = pd.to_numeric(ranking["dry_spell_length"], errors="coerce")
+    ranking = ranking.dropna(subset=["dry_spell_length"])
+    if ranking.empty:
+        return None
+
+    ranking = (
+        ranking.sort_values(
+            ["location_name", "dry_spell_length", "dry_spell_start"],
+            ascending=[True, False, True],
+        )
+        .groupby("location_name", as_index=False)
+        .head(1)
+        .sort_values("dry_spell_length", ascending=False)
+        .head(10)
+        .sort_values("dry_spell_length", ascending=True)
     )
-    fig.update_traces(
-        marker=dict(line=dict(width=0.8, color="#FFFFFF")),
-        hovertemplate="Khoảng độ dài: %{x}<br>Số chuỗi: %{y}<extra></extra>",
+    if ranking.empty:
+        return None
+
+    ranking["dry_spell_length"] = ranking["dry_spell_length"].round().astype(int)
+    ranking["dry_spell_label"] = ranking["dry_spell_length"].astype(str)
+    ranking["dry_spell_start_label"] = pd.to_datetime(
+        ranking["dry_spell_start"], errors="coerce"
+    ).dt.strftime("%d/%m/%Y")
+    ranking["dry_spell_end_label"] = pd.to_datetime(
+        ranking["dry_spell_end"], errors="coerce"
+    ).dt.strftime("%d/%m/%Y")
+
+    fig = go.Figure()
+    for _, row in ranking.iterrows():
+        fig.add_trace(
+            go.Scatter(
+                x=[0, row["dry_spell_length"]],
+                y=[row["location_name"], row["location_name"]],
+                mode="lines",
+                line=dict(color="#D85716", width=3),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+    fig.add_trace(
+        go.Scatter(
+            x=ranking["dry_spell_length"],
+            y=ranking["location_name"],
+            mode="markers+text",
+            marker=dict(color="#C84E12", size=9),
+            text=ranking["dry_spell_label"],
+            textposition="middle right",
+            textfont=dict(color="#C84E12", size=11),
+            customdata=ranking[
+                ["location_name", "region", "dry_spell_length", "dry_spell_start_label", "dry_spell_end_label"]
+            ].to_numpy(),
+            hovertemplate=(
+                "Địa điểm: %{customdata[0]}<br>"
+                "Nhóm vùng: %{customdata[1]}<br>"
+                "Độ dài chuỗi ngày khô: %{customdata[2]} ngày<br>"
+                "Ngày bắt đầu chuỗi: %{customdata[3]}<br>"
+                "Ngày kết thúc chuỗi: %{customdata[4]}<extra></extra>"
+            ),
+            showlegend=False,
+        )
     )
-    fig.update_layout(bargap=0.06, showlegend=False)
-    fig.update_xaxes(title="Độ dài chuỗi ngày khô (ngày)", gridcolor=BORDER, rangemode="tozero")
-    fig.update_yaxes(title="Số chuỗi", gridcolor=BORDER, rangemode="tozero")
-    return _base_chart_layout(fig, 390)
+    fig.update_layout(showlegend=False)
+    fig.update_xaxes(
+        title="Chuỗi ngày khô dài nhất (ngày)",
+        gridcolor=BORDER,
+        rangemode="tozero",
+        zerolinecolor=BORDER,
+    )
+    fig.update_yaxes(
+        title="",
+        categoryorder="array",
+        categoryarray=ranking["location_name"].tolist(),
+        ticks="",
+    )
+    max_value = float(ranking["dry_spell_length"].max())
+    if max_value > 0:
+        fig.update_xaxes(range=[0, max_value * 1.16])
+    chart_height = max(COMPACT_CHART_HEIGHT, 56 + len(ranking) * 18)
+    return _base_chart_layout(fig, chart_height)
 
 
-def render_kpi_card(label: str, value: str, unit: str) -> None:
+def render_kpi_card(
+    label: str,
+    value: str,
+    unit: str,
+    accent: str,
+    icon_name: str,
+    icon_background: str,
+) -> None:
     st.markdown(
         f"""
         <div class="extreme-kpi-card">
-            <div class="extreme-kpi-label">{html.escape(label)}</div>
-            <div class="extreme-kpi-value">{html.escape(value)}</div>
-            <div class="extreme-kpi-unit">{html.escape(unit)}</div>
+            <div class="extreme-kpi-content">
+                <div class="extreme-kpi-label" style="color: {accent};">{html.escape(label)}</div>
+                <div class="extreme-kpi-value-row">
+                    <span class="extreme-kpi-value" style="color: {accent};">{html.escape(value)}</span>
+                    <span class="extreme-kpi-unit">{html.escape(unit)}</span>
+                </div>
+            </div>
+            <div class="extreme-kpi-icon" style="background: {icon_background}; color: {accent};">
+                <span class="material-symbols-rounded">{html.escape(icon_name)}</span>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -790,39 +1021,68 @@ def render_extreme_weather_tab(
 
     row1 = st.columns(4)
     with row1[0]:
-        render_kpi_card("Ngày nắng nóng TB/năm", f"{kpis['hot_days_avg']:.1f}", "ngày")
+        render_kpi_card(
+            "Ngày nắng nóng TB/năm",
+            f"{kpis['hot_days_avg']:.1f}",
+            "ngày",
+            "#D97706",
+            "wb_sunny",
+            "#FEF3C7",
+        )
     with row1[1]:
-        render_kpi_card("Ngày mưa lớn TB/năm", f"{kpis['heavy_rain_days_avg']:.1f}", "ngày")
+        render_kpi_card(
+            "Ngày mưa lớn TB/năm",
+            f"{kpis['heavy_rain_days_avg']:.1f}",
+            "ngày",
+            "#0B6FF0",
+            "rainy",
+            "#DBEAFE",
+        )
     with row1[2]:
-        render_kpi_card("Đợt nắng nóng TB/năm", f"{kpis['heatwave_events_avg']:.1f}", "đợt")
+        render_kpi_card(
+            "Đợt nắng nóng TB/năm",
+            f"{kpis['heatwave_events_avg']:.1f}",
+            "đợt",
+            "#E11D1D",
+            "device_thermostat",
+            "#FEE2E2",
+        )
     with row1[3]:
-        render_kpi_card("Chuỗi ngày khô dài nhất", f"{kpis['longest_dry_spell']}", "ngày")
+        render_kpi_card(
+            "Chuỗi ngày khô dài nhất",
+            f"{kpis['longest_dry_spell']}",
+            "ngày",
+            "#E6531D",
+            "psychiatry",
+            "#FFEDD5",
+        )
 
-    st.write("")
+    st.markdown('<div class="extreme-kpi-spacer"></div>', unsafe_allow_html=True)
+
     row2 = st.columns([1, 1])
     with row2[0]:
         render_chart_card(
-            "Xếp hạng số ngày nắng nóng theo vùng",
+            "Xếp hạng số ngày nắng nóng trung bình theo vùng",
             create_hot_day_ranking_chart(filtered_df, location_year_grid),
             "Không đủ dữ liệu ngày nắng nóng.",
         )
     with row2[1]:
         render_chart_card(
-            "Phân bố số ngày mưa lớn theo địa điểm",
-            create_heavy_rain_bubble_map(filtered_df, location_year_grid),
-            "Không đủ dữ liệu mưa lớn hoặc tọa độ.",
+            "Số đợt nắng nóng trung bình theo vùng và giai đoạn",
+            create_heatwave_heatmap(location_year_grid, heatwave_events, "heatwave_event_id" in filtered_df.columns),
+            "Không đủ dữ liệu đợt nắng nóng.",
         )
 
     row3 = st.columns([1, 1])
     with row3[0]:
         render_chart_card(
-            "Số đợt nắng nóng theo vùng và giai đoạn",
-            create_heatwave_heatmap(location_year_grid, heatwave_events, "heatwave_event_id" in filtered_df.columns),
-            "Không đủ dữ liệu đợt nắng nóng.",
+            "Phân bố số ngày mưa lớn trung bình theo địa điểm",
+            create_heavy_rain_bubble_map(filtered_df, location_year_grid),
+            "Không đủ dữ liệu mưa lớn hoặc tọa độ.",
         )
     with row3[1]:
         render_chart_card(
-            "Phân bố độ dài chuỗi ngày khô",
-            create_dry_spell_histogram(dry_spells),
-            "Không đủ dữ liệu chuỗi ngày khô.",
+            "Top 10 địa điểm có chuỗi ngày khô dài nhất",
+            create_dry_spell_ranking_chart(dry_spells),
+            "Không có chuỗi ngày khô phù hợp với bộ lọc hiện tại.",
         )
