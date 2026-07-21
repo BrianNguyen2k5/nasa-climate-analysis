@@ -246,7 +246,7 @@ def render_shared_region_legend() -> None:
         f'.tab4-legend-box-vertical {{ background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px; margin-top: 14px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04); height: 310px; display: flex; flex-direction: column; justify-content: center; }}'
         f'.tab4-legend-header {{ font-size: 14px; font-weight: 750; color: #1e3a5f; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dashed #e2e8f0; }}'
         f'.tab4-legend-list-vertical {{ display: flex; flex-direction: column; gap: 12px; }}'
-        f'.tab4-legend-item-v {{ display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 650; color: #334155; }}'
+        f'.tab4-legend-item-v {{ display: flex; align-items: center; gap: 10px; font-size: 12px; color: #334155; }}'
         f'.tab4-legend-dot {{ width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex-shrink: 0; }}'
         f'</style>'
         f'<div class="tab4-legend-box-vertical">'
@@ -328,7 +328,7 @@ def render_green_energy_scatter_chart(df_summary: pd.DataFrame) -> None:
         .properties(
 					height=330, 
 					background="#FFFFFF",
-					padding={"left": 10, "right": 0, "top": 10, "bottom": 10}	
+					padding={"left": 0, "right": 0, "top": 10, "bottom": 10}	
 				)
         .configure_view(fill="#FFFFFF", stroke="transparent")
         .configure_axis(
@@ -512,7 +512,7 @@ def render_meteorological_factors_tab(placeholder_box, filters: dict[str, object
     with col1_left:
         st.markdown(
             '<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">'
-            'Ma trận Tiềm năng Năng lượng Xanh (Bức xạ vs Tốc độ gió)'
+            'Biểu đồ mối quan hệ giữa Bức xạ và Gió ở mỗi Địa điểm của 6 Vùng'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -524,7 +524,7 @@ def render_meteorological_factors_tab(placeholder_box, filters: dict[str, object
     with col1_right:
         st.markdown(
             '<div class="section-title" style="margin-top: 8px; margin-bottom: 4px; font-size: 14px; font-weight: 750; color: #1E3A5F;">'
-            'Biến thiên Khí tượng theo Năm (6 Vùng)'
+            'Biểu đồ biến thiên Khí tượng theo năm của 6 Vùng'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -539,7 +539,7 @@ def render_meteorological_factors_tab(placeholder_box, filters: dict[str, object
     with col2_left:
         st.markdown(
             '<div class="section-title" style="margin-top: -12px; margin-bottom: 4px; font-size: 15px; font-weight: 750; color: #1E3A5F;">'
-            'Tính Bổ trợ theo Mùa giữa Nắng và Gió (12 Tháng)'
+            'Biểu đồ mối quan hệ bổ trợ của Bức xạ và Gió theo từng tháng'
             '</div>',
             unsafe_allow_html=True,
         )
