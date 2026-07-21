@@ -203,13 +203,7 @@ def inject_extreme_weather_css() -> None:
                 gap: 1rem !important;
             }
 
-            .block-container [data-testid="stVerticalBlockBorderWrapper"] {
-                background: #FFFFFF !important;
-                border: 0 !important;
-                border-radius: 0 !important;
-                box-shadow: none !important;
-                padding: 0.95rem 1rem 0.65rem !important;
-            }
+            /* Removed .white-card-marker and wrapper css because we will render charts directly */
 
             .extreme-kpi-card {
                 min-height: 112px;
@@ -280,10 +274,10 @@ def inject_extreme_weather_css() -> None:
 
             .extreme-chart-title {
                 color: #1E3A5F;
-                font-size: 1rem;
-                font-weight: 800;
+                font-size: 15px;
+                font-weight: 750;
                 line-height: 1.25;
-                margin: 0 0 12px;
+                margin: 8px 0 6px 0;
                 white-space: normal;
             }
 
@@ -295,13 +289,16 @@ def inject_extreme_weather_css() -> None:
             }
 
             .extreme-map-legend {
-                height: 305px;
-                overflow: hidden;
+                min-height: 305px;
                 display: flex;
                 flex-direction: column;
                 justify-content: flex-start;
-                padding: 2px 0 0 2px;
+                padding: 12px 16px;
                 box-sizing: border-box;
+                background: #FFFFFF;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
             }
 
             .extreme-map-legend-title {
@@ -317,7 +314,7 @@ def inject_extreme_weather_css() -> None:
                 display: grid;
                 align-items: center;
                 column-gap: 8px;
-                margin-bottom: 5px;
+                margin-bottom: 3px;
             }
 
             .extreme-map-region-row {
@@ -1032,7 +1029,7 @@ def render_heavy_rain_map_legend(location_data: pd.DataFrame) -> None:
         '<div class="extreme-map-legend-title">Nhóm vùng</div>'
         f"{region_rows}"
         '<div class="extreme-map-legend-break"></div>'
-        '<div class="extreme-map-legend-title">Số ngày mưa lớn</div>'
+        '<div class="extreme-map-legend-title">Số ngày mưa lớn TB/năm</div>'
         f"{size_rows}"
         "</div>"
     )
@@ -1248,12 +1245,11 @@ def render_kpi_card(label: str, value: str, subject: str) -> None:
 
 
 def render_chart_card(title: str, figure: go.Figure | None, empty_message: str) -> None:
-    with st.container(border=True):
-        st.markdown(f'<div class="extreme-chart-title">{html.escape(title)}</div>', unsafe_allow_html=True)
-        if figure is None:
-            st.info(empty_message)
-        else:
-            st.plotly_chart(figure, use_container_width=True, config=PLOT_CONFIG)
+    st.markdown(f'<div class="extreme-chart-title">{html.escape(title)}</div>', unsafe_allow_html=True)
+    if figure is None:
+        st.info(empty_message)
+    else:
+        st.plotly_chart(figure, use_container_width=True, config=PLOT_CONFIG)
 
 
 def render_heavy_rain_bubble_map_card(
@@ -1262,19 +1258,18 @@ def render_heavy_rain_bubble_map_card(
     location_year_grid: pd.DataFrame,
     empty_message: str,
 ) -> None:
-    with st.container(border=True):
-        st.markdown(f'<div class="extreme-chart-title">{html.escape(title)}</div>', unsafe_allow_html=True)
-        location_data = prepare_heavy_rain_location_data(filtered_df, location_year_grid)
-        figure = create_heavy_rain_bubble_map_from_location_data(location_data)
-        if figure is None:
-            st.info(empty_message)
-            return
+    st.markdown(f'<div class="extreme-chart-title">{html.escape(title)}</div>', unsafe_allow_html=True)
+    location_data = prepare_heavy_rain_location_data(filtered_df, location_year_grid)
+    figure = create_heavy_rain_bubble_map_from_location_data(location_data)
+    if figure is None:
+        st.info(empty_message)
+        return
 
-        map_col, legend_col = st.columns([4.7, 1.35], gap="small")
-        with map_col:
-            st.plotly_chart(figure, use_container_width=True, config=PLOT_CONFIG)
-        with legend_col:
-            render_heavy_rain_map_legend(location_data)
+    map_col, legend_col = st.columns([4.7, 1.35], gap="small")
+    with map_col:
+        st.plotly_chart(figure, use_container_width=True, config=PLOT_CONFIG)
+    with legend_col:
+        render_heavy_rain_map_legend(location_data)
 
 
 def render_extreme_weather_tab(
@@ -1308,13 +1303,13 @@ def render_extreme_weather_tab(
     row2 = st.columns([1, 1])
     with row2[0]:
         render_chart_card(
-            "Xếp hạng số ngày nắng nóng trung bình theo vùng",
+            "Xếp hạng số ngày nắng nóng trung bình theo vùng (nhiệt độ ≥ 35°C)",
             create_hot_day_ranking_chart(filtered_df, location_year_grid),
             "Không đủ dữ liệu ngày nắng nóng.",
         )
     with row2[1]:
         render_chart_card(
-            "Số đợt nắng nóng trung bình theo vùng và giai đoạn",
+            "Số đợt nắng nóng trung bình theo vùng và giai đoạn (≥ 3 ngày liên tiếp có nhiệt độ ≥ 35°C)",
             create_heatwave_heatmap(location_year_grid, heatwave_events, "heatwave_event_id" in filtered_df.columns),
             "Không đủ dữ liệu đợt nắng nóng.",
         )
@@ -1322,14 +1317,14 @@ def render_extreme_weather_tab(
     row3 = st.columns([1, 1])
     with row3[0]:
         render_heavy_rain_bubble_map_card(
-            "Phân bố số ngày mưa lớn trung bình theo địa điểm",
+            "Phân bố số ngày mưa lớn trung bình theo địa điểm (lượng mưa > 50 mm/ngày)",
             filtered_df,
             location_year_grid,
             "Không đủ dữ liệu mưa lớn hoặc tọa độ.",
         )
     with row3[1]:
         render_chart_card(
-            "Top 10 địa điểm có chuỗi ngày khô dài nhất",
+            "Top 10 địa điểm có chuỗi ngày khô dài nhất (lượng mưa < 1 mm/ngày)",
             create_dry_spell_ranking_chart(dry_spells),
             "Không có chuỗi ngày khô phù hợp với bộ lọc hiện tại.",
         )
