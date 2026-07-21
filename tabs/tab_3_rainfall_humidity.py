@@ -65,7 +65,7 @@ def load_rainfall_humidity_data() -> pd.DataFrame:
         "year",
         "month",
         "PRECTOTCORR",
-         "RH2M",
+        "RH2M",
         "heavy_rain_day"
     ]
     df = pd.read_csv(DATA_PATH, usecols=usecols)
@@ -75,14 +75,19 @@ def load_rainfall_humidity_data() -> pd.DataFrame:
 
 
 def filter_data(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
-    period = filters.get("year_range") or (1991, 2025)
-    filtered = df[df["year"].between(int(period[0]), int(period[1]))]
-    regions = filters.get("selected_regions")
+    # Đồng bộ logic lấy period với Tab 4 để đảm bảo bộ lọc năm hoạt động
+    period = filters.get("year_range") or filters.get("period") or (1991, 2025)
+    start_year, end_year = period
+    filtered = df[df["year"].between(int(start_year), int(end_year))]
+
+    regions = filters.get("selected_regions") or filters.get("selected_region_keys")
     if regions:
         filtered = filtered[filtered["region_vn"].isin(regions)]
-    locations = filters.get("selected_reference_points")
+
+    locations = filters.get("selected_reference_points") or filters.get("locations")
     if locations:
         filtered = filtered[filtered["location_name"].isin(locations) | filtered["location_vn"].isin(locations)]
+
     return filtered
 
 
@@ -116,21 +121,8 @@ def render_region_legend():
             padding-bottom: 8px; 
             border-bottom: 1px dashed #e2e8f0; 
         }}
-        .tab3-legend-item {{ 
-            display: flex; 
-            align-items: center; 
-            gap: 10px; 
-            font-size: 12px; 
-            color: #334155; 
-            margin-bottom: 8px; 
-        }}
-        .tab3-legend-dot {{ 
-            width: 12px; 
-            height: 12px; 
-            border-radius: 50%; 
-            display: inline-block; 
-            flex-shrink: 0; 
-        }}
+        .tab3-legend-item {{ display: flex; align-items: center; gap: 10px; font-size: 12px; color: #334155; margin-bottom: 8px; }}
+        .tab3-legend-dot {{ width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex-shrink: 0; }}
         </style>
         <div class="tab3-legend-box">
             <div class="tab3-legend-header">Nhóm các vùng</div>
@@ -203,6 +195,7 @@ def render_rainfall_humidity_tab(placeholder_box, filters: dict | None = None) -
         </style>
     """, unsafe_allow_html=True)
 
+    # Đảm bảo lấy filter đúng cách
     active_filters = filters or {
         "selected_regions": st.session_state.get("selected_regions", []),
         "selected_reference_points": st.session_state.get("selected_reference_points", []),
@@ -225,7 +218,8 @@ def render_rainfall_humidity_tab(placeholder_box, filters: dict | None = None) -
     kpis = [
         {"t": "Lượng mưa trung bình cao nhất", "v": f"{max_rain['PRECTOTCORR']:.2f} mm", "s": max_rain["location_vn"]},
         {"t": "Độ ẩm trung bình cao nhất", "v": f"{max_hum['RH2M']:.1f} %", "s": max_hum["location_vn"]},
-        {"t": "Số ngày mưa lớn nhiều nhất", "v": f"{int(max_heavy_days['heavy_rain_day'])} ngày", "s": max_heavy_days["location_vn"]},
+        {"t": "Số ngày mưa lớn nhiều nhất", "v": f"{int(max_heavy_days['heavy_rain_day'])} ngày",
+         "s": max_heavy_days["location_vn"]},
         {"t": "Độ ẩm trung bình toàn khu vực", "v": f"{df['RH2M'].mean():.1f} %", "s": "Dữ liệu tổng hợp"}
     ]
     for col, k in zip(kcols, kpis):
@@ -241,10 +235,14 @@ def render_rainfall_humidity_tab(placeholder_box, filters: dict | None = None) -
     # 2. Hàng 1
     col1, col2, col3 = st.columns([1, 1, 0.5])
     with col1:
-        st.markdown('<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Xu thế lượng mưa trung bình theo tháng</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Xu thế lượng mưa trung bình theo tháng</div>',
+            unsafe_allow_html=True)
         draw_line_chart(df, "PRECTOTCORR", "Lượng mưa (mm)")
     with col2:
-        st.markdown('<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Xu thế độ ẩm tương đối trung bình</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Xu thế độ ẩm tương đối trung bình</div>',
+            unsafe_allow_html=True)
         draw_line_chart(df, "RH2M", "Độ ẩm (%)")
     with col3:
         render_region_legend()
@@ -252,8 +250,12 @@ def render_rainfall_humidity_tab(placeholder_box, filters: dict | None = None) -
     # 3. Hàng 2
     col4, col5 = st.columns([1.3, 1])
     with col4:
-        st.markdown('<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Cường độ mưa theo vùng</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Cường độ mưa theo vùng (Heatmap)</div>',
+            unsafe_allow_html=True)
         draw_heatmap(df)
     with col5:
-        st.markdown('<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Số ngày mưa lớn theo địa điểm</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Số ngày mưa lớn theo địa điểm</div>',
+            unsafe_allow_html=True)
         draw_map(df)
