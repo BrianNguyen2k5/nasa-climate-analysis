@@ -42,6 +42,9 @@ HEATMAP_SCALE = [
 ]
 PLOT_CONFIG = {"displayModeBar": False, "responsive": True}
 COMPACT_CHART_HEIGHT = 305
+HEAVY_RAIN_BUBBLE_BINS = [-0.01, 2, 4, 6, 8, float("inf")]
+HEAVY_RAIN_BUBBLE_LABELS = ["0-2 ngày", "2-4 ngày", "4-6 ngày", "6-8 ngày", ">8 ngày"]
+HEAVY_RAIN_BUBBLE_LEVELS = [1, 2, 3, 4, 5]
 
 LOCATION_ID_TO_REGION = {
     "DBP": "Trung du và miền núi phía Bắc",
@@ -197,9 +200,9 @@ def inject_extreme_weather_css() -> None:
 
             .block-container [data-testid="stVerticalBlockBorderWrapper"] {
                 background: #FFFFFF !important;
-                border: 1px solid rgba(226, 232, 240, 0.95) !important;
-                border-radius: 8px !important;
-                box-shadow: 0 10px 24px rgba(30, 58, 95, 0.07) !important;
+                border: 0 !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
                 padding: 0.95rem 1rem 0.65rem !important;
             }
 
@@ -284,6 +287,64 @@ def inject_extreme_weather_css() -> None:
             .mapboxgl-ctrl-attrib,
             .mapboxgl-ctrl-logo {
                 display: none !important;
+            }
+
+            .extreme-map-legend {
+                height: 305px;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                justify-content: flex-start;
+                padding: 2px 0 0 2px;
+                box-sizing: border-box;
+            }
+
+            .extreme-map-legend-title {
+                color: #64748B;
+                font-size: 0.86rem;
+                font-weight: 700;
+                line-height: 1.15;
+                margin: 0 0 8px;
+            }
+
+            .extreme-map-region-row,
+            .extreme-map-size-row {
+                display: grid;
+                align-items: center;
+                column-gap: 8px;
+                margin-bottom: 7px;
+            }
+
+            .extreme-map-region-row {
+                grid-template-columns: 14px minmax(0, 1fr);
+            }
+
+            .extreme-map-size-row {
+                grid-template-columns: 30px minmax(0, 1fr);
+            }
+
+            .extreme-map-region-dot {
+                width: 13px;
+                height: 13px;
+                border-radius: 999px;
+            }
+
+            .extreme-map-size-dot {
+                border-radius: 999px;
+                background: rgba(90, 90, 90, 0.78);
+                justify-self: center;
+            }
+
+            .extreme-map-region-label,
+            .extreme-map-size-label {
+                color: #1F2937;
+                font-size: 0.76rem;
+                line-height: 1.14;
+                white-space: normal;
+            }
+
+            .extreme-map-legend-break {
+                height: 5px;
             }
         </style>
         """,
@@ -672,12 +733,19 @@ def create_hot_day_ranking_chart(
         ),
     )
     fig.update_layout(showlegend=False, bargap=0.28)
-    fig.update_xaxes(rangemode="tozero", gridcolor=BORDER, zerolinecolor=BORDER)
+    fig.update_xaxes(
+        title="Ngày nắng nóng TB/năm/địa điểm",
+        rangemode="tozero",
+        gridcolor=BORDER,
+        zerolinecolor=BORDER,
+        automargin=True,
+    )
     fig.update_yaxes(
         categoryorder="array",
         categoryarray=ranking["region"].tolist(),
-        title="",
+        title="Nhóm vùng",
         ticks="",
+        automargin=True,
     )
     max_value = float(ranking["hot_day_avg"].max())
     if max_value > 0:
@@ -706,12 +774,12 @@ def _map_center_and_zoom(location_data: pd.DataFrame) -> tuple[dict[str, float],
     return center, zoom
 
 
-def create_heavy_rain_bubble_map(
+def prepare_heavy_rain_location_data(
     filtered_df: pd.DataFrame,
     location_year_grid: pd.DataFrame,
-) -> go.Figure | None:
+) -> pd.DataFrame:
     if filtered_df.empty or location_year_grid.empty or "heavy_rain_day" not in filtered_df.columns:
-        return None
+        return pd.DataFrame()
 
     rain_grid = _sum_by_location_year(filtered_df, location_year_grid, "heavy_rain_day", "heavy_rain_days")
     location_data = (
@@ -721,13 +789,27 @@ def create_heavy_rain_bubble_map(
         .dropna(subset=["latitude", "longitude"])
     )
     if location_data.empty:
-        return None
+        return location_data
 
-    max_value = float(location_data["heavy_rain_avg"].max())
-    if max_value <= 0:
-        location_data["bubble_size"] = 1.0
-    else:
-        location_data["bubble_size"] = location_data["heavy_rain_avg"].clip(lower=max_value * 0.08)
+    rain_values = location_data["heavy_rain_avg"].clip(lower=0)
+    location_data["bubble_size"] = pd.cut(
+        rain_values,
+        bins=HEAVY_RAIN_BUBBLE_BINS,
+        labels=HEAVY_RAIN_BUBBLE_LEVELS,
+        include_lowest=True,
+    ).astype(float)
+    location_data["bubble_range"] = pd.cut(
+        rain_values,
+        bins=HEAVY_RAIN_BUBBLE_BINS,
+        labels=HEAVY_RAIN_BUBBLE_LABELS,
+        include_lowest=True,
+    ).astype(str)
+    return location_data
+
+
+def create_heavy_rain_bubble_map_from_location_data(location_data: pd.DataFrame) -> go.Figure | None:
+    if location_data.empty:
+        return None
 
     scatter_map = getattr(px, "scatter_map", None)
     if scatter_map is not None:
@@ -741,7 +823,7 @@ def create_heavy_rain_bubble_map(
             size_max=26,
             zoom=4,
             map_style="carto-positron",
-            custom_data=["location_name", "region", "heavy_rain_avg"],
+            custom_data=["location_name", "region", "heavy_rain_avg", "bubble_range"],
         )
         center, zoom = _map_center_and_zoom(location_data)
         fig.update_layout(map=dict(center=center, zoom=zoom))
@@ -756,7 +838,7 @@ def create_heavy_rain_bubble_map(
             size_max=26,
             zoom=4,
             mapbox_style="carto-positron",
-            custom_data=["location_name", "region", "heavy_rain_avg"],
+            custom_data=["location_name", "region", "heavy_rain_avg", "bubble_range"],
         )
         center, zoom = _map_center_and_zoom(location_data)
         fig.update_layout(mapbox=dict(center=center, zoom=zoom))
@@ -766,29 +848,61 @@ def create_heavy_rain_bubble_map(
         hovertemplate=(
             "Địa điểm: %{customdata[0]}<br>"
             "Nhóm vùng: %{customdata[1]}<br>"
-            "Số ngày mưa lớn trung bình/năm: %{customdata[2]:.1f}<extra></extra>"
+            "Số ngày mưa lớn trung bình/năm: %{customdata[2]:.1f}<br>"
+            "Bậc kích thước bong bóng: %{customdata[3]}<extra></extra>"
         ),
     )
-    for trace in fig.data:
-        trace.legendrank = 1
-        if trace.name == "Trung du và miền núi phía Bắc":
-            trace.name = "Trung du và miền núi<br>phía Bắc"
     fig = _base_chart_layout(fig, COMPACT_CHART_HEIGHT)
     fig.update_layout(
-        margin=dict(l=8, r=172, t=8, b=28),
-        legend=dict(
-            orientation="v",
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=1.01,
-            title_text="Nhóm vùng",
-            bgcolor="rgba(255,255,255,0)",
-            font=dict(size=9),
-            tracegroupgap=8,
-        ),
+        showlegend=False,
+        margin=dict(l=2, r=2, t=8, b=28),
     )
     return fig
+
+
+def create_heavy_rain_bubble_map(
+    filtered_df: pd.DataFrame,
+    location_year_grid: pd.DataFrame,
+) -> go.Figure | None:
+    location_data = prepare_heavy_rain_location_data(filtered_df, location_year_grid)
+    return create_heavy_rain_bubble_map_from_location_data(location_data)
+
+
+def _bubble_level_diameter(level: int) -> float:
+    return (float(level) / max(HEAVY_RAIN_BUBBLE_LEVELS)) ** 0.5 * 26
+
+
+def render_heavy_rain_map_legend(location_data: pd.DataFrame) -> None:
+    visible_regions = [region for region in REGION_ORDER if region in set(location_data["region"])]
+    region_rows = "\n".join(
+        (
+            '<div class="extreme-map-region-row">'
+            f'<span class="extreme-map-region-dot" style="background: {REGION_COLOR_MAP.get(region, SECONDARY)};"></span>'
+            f'<span class="extreme-map-region-label">{html.escape(region)}</span>'
+            "</div>"
+        )
+        for region in visible_regions
+    )
+    size_rows = "\n".join(
+        (
+            '<div class="extreme-map-size-row">'
+            f'<span class="extreme-map-size-dot" style="width: {diameter:.1f}px; height: {diameter:.1f}px;"></span>'
+            f'<span class="extreme-map-size-label">{html.escape(label)}</span>'
+            "</div>"
+        )
+        for level, label in zip(HEAVY_RAIN_BUBBLE_LEVELS, HEAVY_RAIN_BUBBLE_LABELS)
+        for diameter in [_bubble_level_diameter(level)]
+    )
+    legend_html = (
+        '<div class="extreme-map-legend">'
+        '<div class="extreme-map-legend-title">Nhóm vùng</div>'
+        f"{region_rows}"
+        '<div class="extreme-map-legend-break"></div>'
+        '<div class="extreme-map-legend-title">Bậc bong bóng</div>'
+        f"{size_rows}"
+        "</div>"
+    )
+    st.markdown(legend_html, unsafe_allow_html=True)
 
 
 def _period_labels(years: pd.Series) -> pd.DataFrame:
@@ -864,8 +978,19 @@ def create_heatwave_heatmap(
             ),
         )
     )
-    fig.update_xaxes(side="bottom", ticks="", gridcolor=CARD)
-    fig.update_yaxes(ticks="", gridcolor=CARD)
+    fig.update_xaxes(
+        title="Giai đoạn",
+        side="bottom",
+        ticks="",
+        gridcolor=CARD,
+        automargin=True,
+    )
+    fig.update_yaxes(
+        title="Nhóm vùng",
+        ticks="",
+        gridcolor=CARD,
+        automargin=True,
+    )
     fig = _base_chart_layout(fig, COMPACT_CHART_HEIGHT)
     fig.update_layout(margin=dict(l=8, r=58, t=8, b=42))
     return fig
@@ -948,12 +1073,14 @@ def create_dry_spell_ranking_chart(dry_spells: pd.DataFrame) -> go.Figure | None
         gridcolor=BORDER,
         rangemode="tozero",
         zerolinecolor=BORDER,
+        automargin=True,
     )
     fig.update_yaxes(
-        title="",
+        title="Địa điểm",
         categoryorder="array",
         categoryarray=ranking["location_name"].tolist(),
         ticks="",
+        automargin=True,
     )
     max_value = float(ranking["dry_spell_length"].max())
     if max_value > 0:
@@ -996,6 +1123,27 @@ def render_chart_card(title: str, figure: go.Figure | None, empty_message: str) 
             st.info(empty_message)
         else:
             st.plotly_chart(figure, use_container_width=True, config=PLOT_CONFIG)
+
+
+def render_heavy_rain_bubble_map_card(
+    title: str,
+    filtered_df: pd.DataFrame,
+    location_year_grid: pd.DataFrame,
+    empty_message: str,
+) -> None:
+    with st.container(border=True):
+        st.markdown(f'<div class="extreme-chart-title">{html.escape(title)}</div>', unsafe_allow_html=True)
+        location_data = prepare_heavy_rain_location_data(filtered_df, location_year_grid)
+        figure = create_heavy_rain_bubble_map_from_location_data(location_data)
+        if figure is None:
+            st.info(empty_message)
+            return
+
+        map_col, legend_col = st.columns([4.7, 1.35], gap="small")
+        with map_col:
+            st.plotly_chart(figure, use_container_width=True, config=PLOT_CONFIG)
+        with legend_col:
+            render_heavy_rain_map_legend(location_data)
 
 
 def render_extreme_weather_tab(
@@ -1075,9 +1223,10 @@ def render_extreme_weather_tab(
 
     row3 = st.columns([1, 1])
     with row3[0]:
-        render_chart_card(
+        render_heavy_rain_bubble_map_card(
             "Phân bố số ngày mưa lớn trung bình theo địa điểm",
-            create_heavy_rain_bubble_map(filtered_df, location_year_grid),
+            filtered_df,
+            location_year_grid,
             "Không đủ dữ liệu mưa lớn hoặc tọa độ.",
         )
     with row3[1]:
