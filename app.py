@@ -1,3 +1,6 @@
+from pathlib import Path
+
+import pandas as pd
 import streamlit as st
 
 from sidebar import inject_sidebar_css, render_sidebar
@@ -18,6 +21,7 @@ CARD = "#FFFFFF"
 TEXT = "#1F2937"
 MUTED = "#64748B"
 BORDER = "#E2E8F0"
+DATA_PATH = Path(__file__).parent / "data" / "nasa_power_vietnam_daily_clean.csv"
 
 
 def configure_page() -> None:
@@ -289,6 +293,13 @@ def placeholder_box(title: str, description: str, kicker: str = "Placeholder", t
     )
 
 
+@st.cache_data(show_spinner=False)
+def load_climate_data() -> pd.DataFrame:
+    if not DATA_PATH.exists():
+        return pd.DataFrame()
+    return pd.read_csv(DATA_PATH, low_memory=False)
+
+
 def render_header(title: str = "Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu") -> None:
     st.markdown(
         f"""
@@ -324,7 +335,7 @@ def render_active_tab(filters: dict[str, object]) -> None:
     elif selected_tab == "Yếu tố khí tượng":
         render_meteorological_factors_tab(placeholder_box, filters)
     elif selected_tab == "Thời tiết cực đoan":
-        render_extreme_weather_tab(placeholder_box)
+        render_extreme_weather_tab(placeholder_box, load_climate_data(), filters)
     else:
         render_ai_assistant_tab(placeholder_box)
 
@@ -348,8 +359,7 @@ def main() -> None:
     elif selected_tab == "Yếu tố khí tượng":
         render_header("Phân tích đặc điểm gió, áp suất và bức xạ mặt trời")
     elif selected_tab == "Thời tiết cực đoan":
-        render_header("Phân tích các khu vực liên quan đến thời tiết cực đoan")
-        render_metric_row()
+        pass
     else:
         # Tab AI Assistant
         render_header("Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu")
