@@ -33,6 +33,11 @@ REGION_COLOR_MAP = {
     "Đồng bằng sông Cửu Long": "#06B6D4",
     "Đồng bằng sông Hồng": "#10B981",
 }
+REGION_LEGEND_LABELS = {
+    "Đồng bằng sông Cửu Long": "ĐB sông Cửu Long",
+    "Đồng bằng sông Hồng": "ĐB sông Hồng",
+    "Trung du và miền núi phía Bắc": "Trung du và miền núi phía Bắc",
+}
 HEATMAP_SCALE = [
     [0.0, "#FFF7DA"],
     [0.25, "#FDE7A6"],
@@ -186,11 +191,11 @@ def inject_extreme_weather_css() -> None:
         """
         <style>
             .block-container {
-                padding-top: 1.4rem !important;
-                padding-bottom: 0.8rem !important;
-                padding-left: 0.7rem !important;
-                padding-right: 0.7rem !important;
-                max-width: calc(100vw - 1.4rem) !important;
+                padding-top: 0.4rem !important;
+                padding-bottom: 2.5rem !important;
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+                max-width: 98% !important;
                 width: 100% !important;
             }
 
@@ -301,10 +306,10 @@ def inject_extreme_weather_css() -> None:
 
             .extreme-map-legend-title {
                 color: #64748B;
-                font-size: 0.86rem;
+                font-size: 0.82rem;
                 font-weight: 700;
                 line-height: 1.15;
-                margin: 0 0 8px;
+                margin: 0 0 6px;
             }
 
             .extreme-map-region-row,
@@ -312,7 +317,7 @@ def inject_extreme_weather_css() -> None:
                 display: grid;
                 align-items: center;
                 column-gap: 8px;
-                margin-bottom: 7px;
+                margin-bottom: 5px;
             }
 
             .extreme-map-region-row {
@@ -338,13 +343,13 @@ def inject_extreme_weather_css() -> None:
             .extreme-map-region-label,
             .extreme-map-size-label {
                 color: #1F2937;
-                font-size: 0.76rem;
-                line-height: 1.14;
+                font-size: 0.72rem;
+                line-height: 1.1;
                 white-space: normal;
             }
 
             .extreme-map-legend-break {
-                height: 5px;
+                height: 3px;
             }
         </style>
         """,
@@ -672,6 +677,135 @@ def calculate_extreme_weather_kpis(
     }
 
 
+def _format_kpi_number(value: float) -> str:
+    rounded = round(float(value), 1)
+    if rounded.is_integer():
+        return str(int(rounded))
+    return f"{rounded:.1f}".replace(".", ",")
+
+
+def _format_year_span(start_date: Any, end_date: Any) -> str:
+    start_year = pd.to_datetime(start_date, errors="coerce")
+    end_year = pd.to_datetime(end_date, errors="coerce")
+    if pd.isna(start_year) and pd.isna(end_year):
+        return "Không rõ năm"
+    if pd.isna(end_year):
+        return str(int(start_year.year))
+    if pd.isna(start_year):
+        return str(int(end_year.year))
+    if start_year.year == end_year.year:
+        return str(int(start_year.year))
+    return f"{int(start_year.year)}–{int(end_year.year)}"
+
+
+def _top_region_average_kpi(
+    location_year_grid: pd.DataFrame,
+    filtered_df: pd.DataFrame,
+    source_column: str,
+    output_column: str,
+    label: str,
+    unit: str,
+) -> dict[str, str]:
+    metric_grid = _sum_by_location_year(filtered_df, location_year_grid, source_column, output_column)
+    if metric_grid.empty:
+        return {"label": label, "value": f"0 {unit}", "subject": "Không có dữ liệu"}
+
+    ranking = metric_grid.dropna(subset=["region"]).copy()
+    ranking[output_column] = pd.to_numeric(ranking[output_column], errors="coerce").fillna(0.0)
+    ranking = ranking.groupby("region", as_index=False).agg(metric_value=(output_column, "mean"))
+    if ranking.empty:
+        return {"label": label, "value": f"0 {unit}", "subject": "Không có dữ liệu"}
+
+    top_row = ranking.sort_values(
+        ["metric_value", "region"],
+        ascending=[False, True],
+    ).iloc[0]
+    return {
+        "label": label,
+        "value": f"{_format_kpi_number(float(top_row['metric_value']))} {unit}",
+        "subject": str(top_row["region"]),
+    }
+
+
+def build_extreme_weather_kpis(
+    filtered_df: pd.DataFrame,
+    location_year_grid: pd.DataFrame,
+    heatwave_events: pd.DataFrame,
+    dry_spells: pd.DataFrame,
+) -> list[dict[str, str]]:
+    hot_kpi = _top_region_average_kpi(
+        location_year_grid,
+        filtered_df,
+        "hot_day",
+        "hot_days",
+        "Số ngày nóng nhiều nhất",
+        "ngày/năm",
+    )
+    rain_kpi = _top_region_average_kpi(
+        location_year_grid,
+        filtered_df,
+        "heavy_rain_day",
+        "heavy_rain_days",
+        "Số ngày mưa lớn nhiều nhất",
+        "ngày/năm",
+    )
+
+    if heatwave_events.empty:
+        heatwave_kpi = {
+            "label": "Số đợt nắng nóng nhiều nhất/năm",
+            "value": "0 đợt",
+            "subject": "Không có dữ liệu",
+        }
+    else:
+        heatwave_counts = (
+            heatwave_events.groupby(["location_id", "year"], as_index=False)
+            .size()
+            .rename(columns={"size": "heatwave_events"})
+        )
+        heatwave_grid = location_year_grid.merge(heatwave_counts, on=["location_id", "year"], how="left")
+        heatwave_grid["heatwave_events"] = pd.to_numeric(
+            heatwave_grid["heatwave_events"], errors="coerce"
+        ).fillna(0.0)
+        heatwave_ranking = heatwave_grid.dropna(subset=["region"]).groupby("region", as_index=False).agg(
+            metric_value=("heatwave_events", "mean")
+        )
+        top_heatwave = heatwave_ranking.sort_values(
+            ["metric_value", "region"],
+            ascending=[False, True],
+        ).iloc[0]
+        heatwave_kpi = {
+            "label": "Số đợt nắng nóng nhiều nhất",
+            "value": f"{_format_kpi_number(float(top_heatwave['metric_value']))} đợt/năm",
+            "subject": str(top_heatwave["region"]),
+        }
+
+    if dry_spells.empty:
+        dry_kpi = {
+            "label": "Chuỗi ngày khô dài nhất",
+            "value": "0 ngày",
+            "subject": "Không có dữ liệu",
+        }
+    else:
+        dry_ranking = dry_spells.copy()
+        dry_ranking["dry_spell_length"] = pd.to_numeric(
+            dry_ranking["dry_spell_length"], errors="coerce"
+        ).fillna(0.0)
+        top_dry = dry_ranking.sort_values(
+            ["dry_spell_length", "dry_spell_start", "location_name"],
+            ascending=[False, True, True],
+        ).iloc[0]
+        dry_kpi = {
+            "label": "Chuỗi ngày khô dài nhất",
+            "value": f"{int(round(float(top_dry['dry_spell_length'])))} ngày",
+            "subject": (
+                f"{top_dry['location_name']} · "
+                f"{_format_year_span(top_dry['dry_spell_start'], top_dry['dry_spell_end'])}"
+            ),
+        }
+
+    return [hot_kpi, rain_kpi, heatwave_kpi, dry_kpi]
+
+
 def _base_chart_layout(fig: go.Figure, height: int) -> go.Figure:
     fig.update_layout(
         height=height,
@@ -878,7 +1012,7 @@ def render_heavy_rain_map_legend(location_data: pd.DataFrame) -> None:
         (
             '<div class="extreme-map-region-row">'
             f'<span class="extreme-map-region-dot" style="background: {REGION_COLOR_MAP.get(region, SECONDARY)};"></span>'
-            f'<span class="extreme-map-region-label">{html.escape(region)}</span>'
+            f'<span class="extreme-map-region-label">{html.escape(REGION_LEGEND_LABELS.get(region, region))}</span>'
             "</div>"
         )
         for region in visible_regions
@@ -898,7 +1032,7 @@ def render_heavy_rain_map_legend(location_data: pd.DataFrame) -> None:
         '<div class="extreme-map-legend-title">Nhóm vùng</div>'
         f"{region_rows}"
         '<div class="extreme-map-legend-break"></div>'
-        '<div class="extreme-map-legend-title">Bậc bong bóng</div>'
+        '<div class="extreme-map-legend-title">Số ngày mưa lớn</div>'
         f"{size_rows}"
         "</div>"
     )
@@ -1089,28 +1223,25 @@ def create_dry_spell_ranking_chart(dry_spells: pd.DataFrame) -> go.Figure | None
     return _base_chart_layout(fig, chart_height)
 
 
-def render_kpi_card(
-    label: str,
-    value: str,
-    unit: str,
-    accent: str,
-    icon_name: str,
-    icon_background: str,
-) -> None:
+def _split_kpi_value(value: str) -> tuple[str, str]:
+    parts = value.split(" ", 1)
+    if len(parts) == 1:
+        return value, ""
+    return parts[0], parts[1]
+
+
+def render_kpi_card(label: str, value: str, subject: str) -> None:
+    number, unit = _split_kpi_value(value)
+    unit_html = f'<span class="kpi-unit">{html.escape(unit)}</span>' if unit else ""
     st.markdown(
         f"""
-        <div class="extreme-kpi-card">
-            <div class="extreme-kpi-content">
-                <div class="extreme-kpi-label" style="color: {accent};">{html.escape(label)}</div>
-                <div class="extreme-kpi-value-row">
-                    <span class="extreme-kpi-value" style="color: {accent};">{html.escape(value)}</span>
-                    <span class="extreme-kpi-unit">{html.escape(unit)}</span>
-                </div>
+        <div class="metric-card overview-kpi-card">
+            <div class="metric-label">{html.escape(label)}</div>
+            <div class="kpi-value-row">
+                <span class="kpi-number">{html.escape(number)}</span>{unit_html}
             </div>
-            <div class="extreme-kpi-icon" style="background: {icon_background}; color: {accent};">
-                <span class="material-symbols-rounded">{html.escape(icon_name)}</span>
-            </div>
-        </div>
+            <div class="overview-kpi-subject">{html.escape(subject)}</div>
+        </div> 
         """,
         unsafe_allow_html=True,
     )
@@ -1160,7 +1291,7 @@ def render_extreme_weather_tab(
     location_year_grid = create_location_year_grid(filtered_df, selected_years)
     heatwave_events = prepare_heatwave_event_table(filtered_df)
     dry_spells = prepare_dry_spell_event_table(filtered_df)
-    kpis = calculate_extreme_weather_kpis(
+    kpi_items = build_extreme_weather_kpis(
         filtered_df,
         location_year_grid,
         heatwave_events,
@@ -1168,42 +1299,9 @@ def render_extreme_weather_tab(
     )
 
     row1 = st.columns(4)
-    with row1[0]:
-        render_kpi_card(
-            "Ngày nắng nóng TB/năm",
-            f"{kpis['hot_days_avg']:.1f}",
-            "ngày",
-            "#D97706",
-            "wb_sunny",
-            "#FEF3C7",
-        )
-    with row1[1]:
-        render_kpi_card(
-            "Ngày mưa lớn TB/năm",
-            f"{kpis['heavy_rain_days_avg']:.1f}",
-            "ngày",
-            "#0B6FF0",
-            "rainy",
-            "#DBEAFE",
-        )
-    with row1[2]:
-        render_kpi_card(
-            "Đợt nắng nóng TB/năm",
-            f"{kpis['heatwave_events_avg']:.1f}",
-            "đợt",
-            "#E11D1D",
-            "device_thermostat",
-            "#FEE2E2",
-        )
-    with row1[3]:
-        render_kpi_card(
-            "Chuỗi ngày khô dài nhất",
-            f"{kpis['longest_dry_spell']}",
-            "ngày",
-            "#E6531D",
-            "psychiatry",
-            "#FFEDD5",
-        )
+    for col, kpi in zip(row1, kpi_items):
+        with col:
+            render_kpi_card(kpi["label"], kpi["value"], kpi["subject"])
 
     st.markdown('<div class="extreme-kpi-spacer"></div>', unsafe_allow_html=True)
 
