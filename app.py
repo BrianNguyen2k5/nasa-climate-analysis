@@ -94,8 +94,8 @@ def inject_css() -> None:
                 background: linear-gradient(135deg, #ffffff 0%, #eef8f7 54%, #fdf4eb 100%);
                 border: 1px solid var(--border);
                 border-radius: 7px;
-                padding: 20px 28px;
-                margin-bottom: 6px;
+                padding: 10px 18px;
+                margin-bottom: 8px;
             }}
 
             .eyebrow {{
@@ -104,15 +104,15 @@ def inject_css() -> None:
                 font-weight: 700;
                 letter-spacing: 0.08em;
                 text-transform: uppercase;
-                margin-bottom: 6px;
+                margin-bottom: 4px;
             }}
 
             .hero-title {{
                 color: var(--primary);
-                font-size: 2rem;
-                font-weight: 760;
-                line-height: 1.2;
-                margin: 0 0 10px;
+                font-size: 1.25rem;
+                font-weight: 750;
+                line-height: 1.25;
+                margin: 0;
             }}
 
             .hero-subtitle {{
@@ -294,11 +294,11 @@ def placeholder_box(title: str, description: str, kicker: str = "Placeholder", t
     )
 
 
-def render_header() -> None:
+def render_header(title: str = "Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu") -> None:
     st.markdown(
-        """
+        f"""
         <section class="dashboard-hero">
-            <div class="hero-title">Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu</div>
+            <div class="hero-title">{title}</div>
         </section>
         """,
         unsafe_allow_html=True,
@@ -327,20 +327,39 @@ def render_active_tab(filters: dict[str, object]) -> None:
     elif selected_tab == "Mưa và độ ẩm":
         render_rainfall_humidity_tab(placeholder_box)
     elif selected_tab == "Yếu tố khí tượng":
-        render_meteorological_factors_tab(placeholder_box)
+        render_meteorological_factors_tab(placeholder_box, filters)
     elif selected_tab == "Thời tiết cực đoan":
         render_extreme_weather_tab(placeholder_box)
     else:
         render_ai_assistant_tab(placeholder_box)
+
 
 def main() -> None:
     configure_page()
     inject_css()
     inject_sidebar_css()
     filters = render_sidebar()
-    render_header()
-    if filters.get("selected_tab") != "Tổng quan":
+
+    selected_tab = str(filters.get("selected_tab", "Tổng quan"))
+
+    if selected_tab == "Tổng quan":
+        render_header("Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu")
+    elif selected_tab == "Nhiệt độ":
+        render_header("Phân tích đặc điểm nhiệt độ")
         render_metric_row()
+    elif selected_tab == "Mưa và độ ẩm":
+        render_header("Phân tích đặc điểm mưa và độ ẩm")
+        render_metric_row()
+    elif selected_tab == "Yếu tố khí tượng":
+        render_header("Phân tích đặc điểm gió, áp suất và bức xạ mặt trời")
+    elif selected_tab == "Thời tiết cực đoan":
+        render_header("Phân tích các khu vực liên quan đến thời tiết cực đoan")
+        render_metric_row()
+    else:
+        # Tab AI Assistant
+        render_header("Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu")
+        render_metric_row()
+
     render_active_tab(filters)
 
 
