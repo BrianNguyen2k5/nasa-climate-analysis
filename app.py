@@ -33,6 +33,36 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
+            @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+            @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+            /* Force Plus Jakarta Sans globally on text elements, Streamlit widgets & BaseWeb popovers/menus */
+            html, body, .stApp, .stApp *,
+            [data-baseweb="popover"] *,
+            [data-baseweb="menu"] *,
+            [data-baseweb="select"] *,
+            [data-testid="stPopoverBody"] *,
+            div[role="listbox"] *,
+            div[role="option"] * {{
+                font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+            }}
+
+            /* Preserve Material Icons font for all Streamlit icons (popover arrows, expanders, collapse button, etc.) */
+            [data-testid*="stIcon"],
+            [data-testid*="stIcon"] *,
+            [data-testid*="Icon"],
+            [data-testid*="Icon"] *,
+            [data-testid="stSidebarCollapseButton"],
+            [data-testid="stSidebarCollapseButton"] *,
+            [data-testid="stHeader"] *,
+            .material-icons,
+            [class*="MaterialSymbols"],
+            [class*="material-symbols"] {{
+                font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+                color: #334155 !important;
+            }}
+
             :root {{
                 --primary: {PRIMARY};
                 --secondary: {SECONDARY};

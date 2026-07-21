@@ -64,6 +64,15 @@ Bản đồ trong tab Tổng quan được render bằng `folium` và `streamlit
 - Chữ phụ: `#64748B`
 - Đường viền: `#E2E8F0`
 
+## Quy chuẩn Typography, Border & Icons
+
+- **Font chữ chính**: Áp dụng font **Plus Jakarta Sans** toàn cục (`font-family: 'Plus Jakarta Sans', sans-serif !important;`) cho tất cả các thành phần HTML tùy chỉnh và Native Widgets của Streamlit (kể cả Popover, Dropdown, Menu, Checkbox, Radio, Slider,...).
+- **Kích thước chữ tối thiểu (Minimum Font Size)**: Quy định kích thước chữ tối thiểu trên giao diện là **14px** (`font-size: 14px !important;`), tuyệt đối không dùng font chữ nhỏ hơn 14px để đảm bảo khả năng đọc và hiển thị rõ ràng.
+- **Màu đường viền mặc định (Default Border Color)**: Sử dụng màu **`#E2E8F0`** (`border: 1px solid #E2E8F0 !important;`) cho tất cả các thẻ container, widget, card, input và popover body.
+- **Xử lý Icons của Streamlit (Material Symbols / Icons)**:
+  - **Bảo vệ Font Icon**: Tất cả các icon hệ thống của Streamlit (`[data-testid*="stIcon"]`, `[data-testid*="Icon"]`, nút thu gọn sidebar, mũi tên popover `expand_more`/`expand_less`) phải giữ nguyên quy tắc font `Material Symbols Rounded`, `Material Symbols Outlined`, hoặc `Material Icons` với `!important`. Không để cọ font `Plus Jakarta Sans` đè lên thẻ chứa icon để tránh biến icon thành văn bản thuần.
+  - **Kích thước Icon**: Tăng kích thước hiển thị cho icon (ví dụ: Icon mũi tên mở rộng Popover được thiết lập `font-size: 20px !important;` và `line-height: 1 !important;` để hiển thị to rõ và cân đối).
+
 ## Quy ước chia việc để hạn chế conflict
 
 Mỗi thành viên phụ trách một tab chính và chỉ sửa file tab tương ứng:
