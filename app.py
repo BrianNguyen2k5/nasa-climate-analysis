@@ -352,8 +352,7 @@ def main() -> None:
         render_metric_row()
     else:
         # Tab AI Assistant
-        render_header("Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu")
-        render_metric_row()
+        render_header("Data Visualization AI Assistance")
 
     render_active_tab(filters)
 

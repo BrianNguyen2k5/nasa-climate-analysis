@@ -1,0 +1,9 @@
+streamlit
+pandas
+numpy
+plotly
+fastapi
+uvicorn[standard]
+google-genai
+python-dotenv
+requests
