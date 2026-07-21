@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from sidebar import ALL_REGIONS_LABEL, LOCATION_VIETNAMESE, REGION_ORDER
+from sidebar import LOCATION_VIETNAMESE, REGION_ORDER
 
 
 logger = logging.getLogger(__name__)
@@ -28,9 +28,7 @@ BASE_REQUIRED_COLUMNS = {
 TEMPERATURE_COLUMNS = ["T2M", "T2M_MAX", "T2M_MIN", "temperature_range"]
 
 PRIMARY = "#1E3A5F"
-SECONDARY = "#2A9D8F"
 TEMP_ACCENT = "#F4A261"
-MUTED = "#64748B"
 BORDER = "#E2E8F0"
 
 REGION_COLORS = {
@@ -49,8 +47,18 @@ REGION_DISPLAY_SHORT = {
     "Đông Nam Bộ": "Đông Nam Bộ",
     "Đồng bằng sông Cửu Long": "ĐBS Cửu Long",
 }
-
-LOCATION_ENGLISH = {display_name: raw_name for raw_name, display_name in LOCATION_VIETNAMESE.items()}
+LOCATION_PALETTE = [
+    "#4E79A7",
+    "#F28E2B",
+    "#E15759",
+    "#76B7B2",
+    "#59A14F",
+    "#EDC948",
+    "#B07AA1",
+    "#FF9DA7",
+    "#9C755F",
+    "#BAB0AC",
+]
 
 
 def _display_location(raw_name: object) -> str:
@@ -62,32 +70,72 @@ def _format_temperature(value: float, digits: int = 2) -> str:
     return f"{value:.{digits}f}".replace(".", ",") + " °C"
 
 
-def _region_color_encoding(legend: alt.Legend | None = None) -> alt.Color:
+def _active_region_order(data: pd.DataFrame) -> list[str]:
+    present = set(data["region"].astype(str).unique())
+    return [region for region in REGION_ORDER if region in present]
+
+
+def _region_color_encoding(
+    active_regions: list[str],
+    legend: alt.Legend | None = None,
+    field: str = "region",
+) -> alt.Color:
     return alt.Color(
-        "region:N",
+        f"{field}:N",
         title="Vùng",
         scale=alt.Scale(
-            domain=REGION_ORDER,
-            range=[REGION_COLORS[region] for region in REGION_ORDER],
+            domain=active_regions,
+            range=[REGION_COLORS[region] for region in active_regions],
         ),
         legend=legend,
     )
 
 
-def _short_region_legend(columns: int = 3) -> alt.Legend:
-    label_expression = "datum.label"
-    for region, short_name in reversed(list(REGION_DISPLAY_SHORT.items())):
-        label_expression = (
-            f"datum.label === {region!r} ? {short_name!r} : ({label_expression})"
-        )
-    return alt.Legend(
-        title="Vùng",
-        orient="bottom",
-        direction="horizontal",
-        columns=columns,
-        labelExpr=label_expression,
-        labelLimit=170,
+def _render_chart_heading(title: str) -> None:
+    st.markdown(
+        (
+            '<div style="'
+            'color:#1E3A5F;'
+            'font-size:16px;'
+            'font-weight:700;'
+            'line-height:1.3;'
+            'margin:0 0 10px 0;'
+            '">'
+            f"{html.escape(title)}"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
     )
+
+
+def _render_discrete_legend(
+    title: str,
+    items: list[tuple[str, str]],
+) -> None:
+    item_markup = "".join(
+        (
+            '<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">'
+            f'<span style="width:10px;height:10px;border-radius:50%;background:{html.escape(color, quote=True)};display:inline-block;"></span>'
+            f"<span>{html.escape(label)}</span>"
+            "</span>"
+        )
+        for label, color in items
+    )
+    st.markdown(
+        (
+            '<div style="margin:0 0 2px 0;color:#475569;font-size:12px;line-height:1.3;">'
+            f'<div style="color:#1E3A5F;font-weight:600;margin-bottom:4px;">{html.escape(title)}</div>'
+            '<div style="display:flex;flex-wrap:wrap;align-items:center;column-gap:18px;row-gap:6px;">'
+            f"{item_markup}"
+            "</div>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def _dumbbell_height(row_count: int) -> int:
+    return min(480, max(320, 20 * row_count + 70))
 
 
 def _finish_chart(chart: alt.Chart, height: int) -> alt.Chart:
@@ -101,7 +149,6 @@ def _finish_chart(chart: alt.Chart, height: int) -> alt.Chart:
             domainColor="#CBD5E1",
             tickColor="#CBD5E1",
         )
-        .configure_title(color=PRIMARY, fontSize=16, fontWeight=700, anchor="start")
         .configure_legend(labelColor="#475569", titleColor=PRIMARY)
     )
 
@@ -200,9 +247,8 @@ def _validate_temperature_data(df: pd.DataFrame, range_was_present: bool = True)
     return df.sort_values(["location_id", "date"]).reset_index(drop=True)
 
 
-def _parse_period(filters: dict[str, object], df: pd.DataFrame) -> tuple[int, int]:
-    default_period = (int(df["year"].min()), int(df["year"].max()))
-    period = filters.get("period", default_period)
+def _parse_period(filters: dict[str, object]) -> tuple[int, int]:
+    period = filters.get("year_range")
     if not isinstance(period, (tuple, list)) or len(period) != 2:
         raise ValueError("Giai đoạn phân tích phải gồm năm bắt đầu và năm kết thúc.")
     try:
@@ -214,47 +260,35 @@ def _parse_period(filters: dict[str, object], df: pd.DataFrame) -> tuple[int, in
     return start_year, end_year
 
 
-def _raw_location_names(selected_locations: object, df: pd.DataFrame) -> list[str]:
-    if selected_locations in (None, []):
-        return []
-    if not isinstance(selected_locations, (list, tuple, set)):
-        raise ValueError("Bộ lọc địa điểm không hợp lệ.")
-
-    valid_raw_names = set(df["location_name"].astype(str).unique())
-    raw_names: list[str] = []
-    invalid_names: list[str] = []
-    for selected_name in selected_locations:
-        name = str(selected_name)
-        raw_name = name if name in valid_raw_names else LOCATION_ENGLISH.get(name)
-        if raw_name is None or raw_name not in valid_raw_names:
-            invalid_names.append(name)
-        elif raw_name not in raw_names:
-            raw_names.append(raw_name)
-
-    if invalid_names:
-        raise ValueError("Địa điểm không hợp lệ: " + ", ".join(invalid_names))
-    return raw_names
-
-
 def _apply_filters(df: pd.DataFrame, filters: dict[str, object] | None = None) -> pd.DataFrame:
     active_filters = filters or {}
-    start_year, end_year = _parse_period(active_filters, df)
+    start_year, end_year = _parse_period(active_filters)
     scoped = df[df["year"].between(start_year, end_year)]
 
-    selected_region = str(active_filters.get("region", ALL_REGIONS_LABEL))
-    if selected_region != ALL_REGIONS_LABEL:
-        if selected_region not in REGION_ORDER:
-            raise ValueError(f"Vùng không hợp lệ: {selected_region}")
-        scoped = scoped[scoped["region"] == selected_region]
+    selected_regions = active_filters.get("selected_regions", [])
+    if not isinstance(selected_regions, (list, tuple, set)):
+        raise ValueError("Bộ lọc vùng không hợp lệ.")
+    selected_regions = list(dict.fromkeys(str(region) for region in selected_regions))
+    invalid_regions = [region for region in selected_regions if region not in REGION_ORDER]
+    if invalid_regions:
+        raise ValueError("Vùng không hợp lệ: " + ", ".join(invalid_regions))
+    if not selected_regions:
+        return scoped.iloc[0:0].copy()
+    scoped = scoped[scoped["region"].isin(selected_regions)]
 
-    raw_names = _raw_location_names(active_filters.get("locations", []), df)
-    if raw_names:
-        available_locations = set(scoped["location_name"].astype(str).unique())
-        unavailable = [name for name in raw_names if name not in available_locations]
-        if unavailable:
-            display_names = [_display_location(name) for name in unavailable]
-            raise ValueError("Địa điểm không thuộc phạm vi vùng đã chọn: " + ", ".join(display_names))
-        scoped = scoped[scoped["location_name"].isin(raw_names)]
+    selected_locations = active_filters.get("selected_reference_points", [])
+    if not isinstance(selected_locations, (list, tuple, set)):
+        raise ValueError("Bộ lọc địa điểm không hợp lệ.")
+    selected_locations = list(dict.fromkeys(str(location) for location in selected_locations))
+    valid_locations = set(df["location_name"].astype(str).unique())
+    invalid_locations = [
+        location for location in selected_locations if location not in valid_locations
+    ]
+    if invalid_locations:
+        raise ValueError("Địa điểm không hợp lệ: " + ", ".join(invalid_locations))
+    if not selected_locations:
+        return scoped.iloc[0:0].copy()
+    scoped = scoped[scoped["location_name"].isin(selected_locations)]
 
     return scoped.copy()
 
@@ -401,58 +435,15 @@ def _render_kpi_cards(items: list[dict[str, object]]) -> None:
             )
 
 
-def _region_ranking_chart(region_period: pd.DataFrame) -> alt.Chart:
-    tooltip = [
-        alt.Tooltip("region:N", title="Vùng"),
-        alt.Tooltip("mean_t2m:Q", title="T2M trung bình (°C)", format=".2f"),
-        alt.Tooltip("mean_tmax:Q", title="T2M_MAX trung bình (°C)", format=".2f"),
-        alt.Tooltip("mean_tmin:Q", title="T2M_MIN trung bình (°C)", format=".2f"),
-        alt.Tooltip("mean_daily_range:Q", title="Biên độ ngày-đêm TB (°C)", format=".2f"),
-        alt.Tooltip("n_locations:Q", title="Số điểm đang dùng", format=".0f"),
-        alt.Tooltip("hottest_location:N", title="Điểm nóng nhất"),
-        alt.Tooltip("coolest_location:N", title="Điểm mát nhất"),
-        alt.Tooltip("within_region_spread:Q", title="Chênh lệch nội vùng (°C)", format=".2f"),
-    ]
-    region_rank_order = (
-        region_period.sort_values("mean_t2m", ascending=False)["region"].tolist()
+def _vertical_space(height: int = 24) -> None:
+    st.markdown(
+        f'<div style="height: {height}px;"></div>',
+        unsafe_allow_html=True,
     )
-    y = alt.Y(
-        "region:N",
-        title=None,
-        sort=region_rank_order,
-        axis=alt.Axis(labelLimit=245),
-    )
-    bars = (
-        alt.Chart(region_period)
-        .mark_bar(cornerRadiusEnd=4)
-        .encode(
-            x=alt.X("mean_t2m:Q", title="Nhiệt độ trung bình (°C)"),
-            y=y,
-            color=_region_color_encoding(legend=None),
-            tooltip=tooltip,
-        )
-    )
-    labels = bars.mark_text(align="left", baseline="middle", dx=4, color=PRIMARY).encode(
-        text=alt.Text("mean_t2m:Q", format=".2f")
-    )
-    reference_value = float(region_period["mean_t2m"].mean())
-    reference_data = pd.DataFrame({"reference": [reference_value]})
-    reference = (
-        alt.Chart(reference_data)
-        .mark_rule(color=MUTED, strokeDash=[5, 4], strokeWidth=1.5)
-        .encode(
-            x=alt.X("reference:Q"),
-            tooltip=[alt.Tooltip("reference:Q", title="TB các vùng (°C)", format=".2f")],
-        )
-    )
-    chart = (bars + reference + labels).properties(
-        title="Xếp hạng nhiệt độ trung bình theo vùng",
-        padding={"left": 5, "right": 45, "top": 5, "bottom": 5},
-    )
-    return _finish_chart(chart, 310)
 
 
 def _region_scatter_chart(region_period: pd.DataFrame) -> alt.Chart:
+    active_regions = _active_region_order(region_period)
     tooltip = [
         alt.Tooltip("region:N", title="Vùng"),
         alt.Tooltip("mean_t2m:Q", title="T2M trung bình (°C)", format=".2f"),
@@ -467,25 +458,101 @@ def _region_scatter_chart(region_period: pd.DataFrame) -> alt.Chart:
             "mean_t2m:Q",
             title="T2M trung bình (°C)",
             scale=alt.Scale(zero=False, padding=0.5),
+            axis=alt.Axis(
+                grid=True,
+                labelPadding=6,
+                titlePadding=12,
+            ),
         ),
         y=alt.Y(
             "mean_daily_range:Q",
-            title="Biên độ nhiệt ngày-đêm trung bình (°C)",
+            title=["Biên độ nhiệt ngày–đêm", "trung bình (°C)"],
             scale=alt.Scale(zero=False, padding=0.5),
+            axis=alt.Axis(
+                grid=True,
+                labelPadding=6,
+                titlePadding=12,
+                titleLimit=220,
+                labelLimit=120,
+            ),
         ),
     )
     points = base.mark_circle(size=135, opacity=0.9).encode(
-        color=_region_color_encoding(legend=_short_region_legend()),
+        color=_region_color_encoding(
+            active_regions,
+            legend=None,
+        ),
         tooltip=tooltip,
     )
-    chart = points.properties(
-        title="Mức nhiệt và biên độ ngày–đêm",
-        padding={"left": 5, "right": 8, "top": 5, "bottom": 5},
-    )
+    chart = points
     return _finish_chart(chart, 310)
 
 
-def _dumbbell_chart(location_period: pd.DataFrame, multi_region: bool) -> alt.Chart:
+def _location_scatter_chart(location_metrics: pd.DataFrame) -> alt.Chart:
+    location_order = (
+        location_metrics.sort_values("mean_t2m", ascending=False)["location_label"].tolist()
+    )
+    n_locations = len(location_order)
+    location_colors = [
+        LOCATION_PALETTE[index % len(LOCATION_PALETTE)]
+        for index in range(n_locations)
+    ]
+    base = alt.Chart(location_metrics).encode(
+        x=alt.X(
+            "mean_t2m:Q",
+            title="T2M trung bình (°C)",
+            scale=alt.Scale(zero=False, padding=0.5),
+            axis=alt.Axis(
+                grid=True,
+                labelPadding=6,
+                titlePadding=12,
+            ),
+        ),
+        y=alt.Y(
+            "mean_daily_range:Q",
+            title=["Biên độ nhiệt ngày–đêm", "trung bình (°C)"],
+            scale=alt.Scale(zero=False, padding=0.5),
+            axis=alt.Axis(
+                grid=True,
+                labelPadding=6,
+                titlePadding=12,
+                titleLimit=220,
+                labelLimit=120,
+            ),
+        ),
+        tooltip=[
+            alt.Tooltip("location_label:N", title="Điểm tham chiếu"),
+            alt.Tooltip("mean_t2m:Q", title="T2M trung bình (°C)", format=".2f"),
+            alt.Tooltip("mean_tmin:Q", title="T2M_MIN trung bình (°C)", format=".2f"),
+            alt.Tooltip("mean_tmax:Q", title="T2M_MAX trung bình (°C)", format=".2f"),
+            alt.Tooltip(
+                "mean_daily_range:Q",
+                title="Biên độ ngày-đêm TB (°C)",
+                format=".2f",
+            ),
+            alt.Tooltip(
+                "temperature_seasonality:Q",
+                title="Biên độ mùa (°C)",
+                format=".2f",
+            ),
+        ],
+    )
+    points = base.mark_circle(size=135, opacity=0.9).encode(
+        color=alt.Color(
+            "location_label:N",
+            title="Điểm tham chiếu",
+            scale=alt.Scale(domain=location_order, range=location_colors),
+            legend=None,
+        )
+    )
+    return _finish_chart(points, 310)
+
+
+def _dumbbell_chart(
+    location_period: pd.DataFrame,
+    multi_region: bool,
+    height: int | None = None,
+) -> alt.Chart:
     tooltip = [
         alt.Tooltip("region:N", title="Vùng"),
         alt.Tooltip("location_label:N", title="Điểm tham chiếu"),
@@ -494,15 +561,32 @@ def _dumbbell_chart(location_period: pd.DataFrame, multi_region: bool) -> alt.Ch
         alt.Tooltip("mean_tmax:Q", title="T2M_MAX trung bình (°C)", format=".2f"),
         alt.Tooltip("mean_daily_range:Q", title="Biên độ ngày-đêm TB (°C)", format=".2f"),
     ]
+    location_order = (
+        location_period.sort_values("mean_t2m", ascending=False)["location_label"].tolist()
+    )
     y = alt.Y(
         "location_label:N",
         title=None,
-        sort=alt.SortField(field="mean_t2m", order="descending"),
-        axis=alt.Axis(labelLimit=210),
+        sort=location_order,
+        scale=alt.Scale(domain=location_order),
+        axis=alt.Axis(
+            values=location_order,
+            labelLimit=340,
+            labelOverlap=False,
+            labelPadding=10,
+            labelFontSize=11,
+            titlePadding=14,
+        ),
     )
-    color = _region_color_encoding(
-        legend=_short_region_legend() if multi_region else None
-    )
+    if multi_region:
+        active_regions = _active_region_order(location_period)
+        color = _region_color_encoding(
+            active_regions,
+            legend=None,
+        )
+    else:
+        region = str(location_period["region"].iloc[0])
+        color = alt.value(REGION_COLORS.get(region, TEMP_ACCENT))
     base = alt.Chart(location_period).encode(y=y, color=color, tooltip=tooltip)
     ranges = base.mark_rule(strokeWidth=3, opacity=0.75).encode(
         x=alt.X(
@@ -515,56 +599,12 @@ def _dumbbell_chart(location_period: pd.DataFrame, multi_region: bool) -> alt.Ch
     min_points = base.mark_circle(size=48, opacity=0.72).encode(x="mean_tmin:Q")
     max_points = base.mark_circle(size=48, opacity=0.72).encode(x="mean_tmax:Q")
     mean_points = base.mark_circle(size=115, stroke="white", strokeWidth=1.2).encode(x="mean_t2m:Q")
-    title = (
-        "Khoảng Tmin–Tmax và vị trí Tmean"
-        if multi_region
-        else "Khoảng Tmin–Tmax theo địa điểm"
+    chart = (ranges + min_points + max_points + mean_points).properties(
+        padding={"left": 28, "right": 8, "top": 2, "bottom": 4}
     )
-    chart = (ranges + min_points + max_points + mean_points).properties(title=title)
-    height = 460 if multi_region else 320
+    if height is None:
+        height = _dumbbell_height(len(location_order))
     return _finish_chart(chart, height)
-
-
-def _location_ranking_chart(location_period: pd.DataFrame, region: str) -> alt.Chart:
-    color = REGION_COLORS.get(region, TEMP_ACCENT)
-    tooltip = [
-        alt.Tooltip("location_label:N", title="Điểm tham chiếu"),
-        alt.Tooltip("mean_t2m:Q", title="T2M trung bình (°C)", format=".2f"),
-        alt.Tooltip("mean_tmax:Q", title="T2M_MAX trung bình (°C)", format=".2f"),
-        alt.Tooltip("mean_tmin:Q", title="T2M_MIN trung bình (°C)", format=".2f"),
-        alt.Tooltip("mean_daily_range:Q", title="Biên độ ngày-đêm TB (°C)", format=".2f"),
-        alt.Tooltip("observation_days:Q", title="Số ngày quan sát", format=",.0f"),
-    ]
-    location_rank_order = (
-        location_period.sort_values("mean_t2m", ascending=False)["location_label"].tolist()
-    )
-    y = alt.Y(
-        "location_label:N",
-        title=None,
-        sort=location_rank_order,
-        axis=alt.Axis(labelLimit=210),
-    )
-    bars = alt.Chart(location_period).mark_bar(color=color, cornerRadiusEnd=4).encode(
-        x=alt.X("mean_t2m:Q", title="Nhiệt độ trung bình (°C)"),
-        y=y,
-        tooltip=tooltip,
-    )
-    labels = bars.mark_text(align="left", dx=4, color=PRIMARY).encode(
-        text=alt.Text("mean_t2m:Q", format=".2f")
-    )
-    reference_value = float(location_period["mean_t2m"].mean())
-    reference = (
-        alt.Chart(pd.DataFrame({"reference": [reference_value]}))
-        .mark_rule(color=MUTED, strokeDash=[5, 4])
-        .encode(
-            x="reference:Q",
-            tooltip=[alt.Tooltip("reference:Q", title="TB các điểm (°C)", format=".2f")],
-        )
-    )
-    chart = (bars + reference + labels).properties(
-        title=f"Xếp hạng địa điểm trong {region}"
-    )
-    return _finish_chart(chart, 320)
 
 
 def _heatmap_chart(
@@ -572,7 +612,6 @@ def _heatmap_chart(
     row_field: str,
     row_title: str,
     row_order: list[str],
-    title: str,
     height: int | None = None,
     color_legend_bottom: bool = False,
 ) -> alt.Chart:
@@ -601,7 +640,15 @@ def _heatmap_chart(
                 f"{row_field}:N",
                 title=row_title,
                 sort=row_order,
-                axis=alt.Axis(labelLimit=280 if row_field == "region" else 245),
+                scale=alt.Scale(domain=row_order),
+                axis=alt.Axis(
+                    values=row_order,
+                    labelLimit=320,
+                    labelOverlap=False,
+                    labelPadding=8,
+                    labelFontSize=11,
+                    titlePadding=14,
+                ),
             ),
             color=alt.Color(
                 "monthly_mean_t2m:Q",
@@ -615,13 +662,12 @@ def _heatmap_chart(
                 alt.Tooltip("monthly_mean_t2m:Q", title="T2M trung bình (°C)", format=".2f"),
             ],
         )
-        .properties(title=title)
     )
     chart_height = height if height is not None else max(260, len(row_order) * 45 + 45)
     return _finish_chart(chart, chart_height)
 
 
-def _monthly_profile_chart(location_month: pd.DataFrame, location_label: str) -> alt.Chart:
+def _monthly_profile_chart(location_month: pd.DataFrame) -> alt.Chart:
     chart = (
         alt.Chart(location_month)
         .mark_line(color=TEMP_ACCENT, strokeWidth=3, point=alt.OverlayMarkDef(size=75, filled=True))
@@ -643,7 +689,6 @@ def _monthly_profile_chart(location_month: pd.DataFrame, location_label: str) ->
                 alt.Tooltip("monthly_mean_t2m:Q", title="T2M trung bình (°C)", format=".2f"),
             ],
         )
-        .properties(title=f"Chu kỳ nhiệt 12 tháng tại {location_label}")
     )
     return _finish_chart(chart, 320)
 
@@ -653,7 +698,6 @@ def _annual_distribution_chart(
     category_field: str,
     category_title: str,
     category_order: list[str],
-    title: str,
     region_colors: bool,
     height: int | None = None,
     show_category_axis_title: bool = True,
@@ -663,7 +707,15 @@ def _annual_distribution_chart(
         f"{category_field}:N",
         title=category_title if show_category_axis_title else None,
         sort=category_order,
-        axis=alt.Axis(labelLimit=245),
+        scale=alt.Scale(domain=category_order),
+        axis=alt.Axis(
+            values=category_order,
+            labelLimit=340,
+            labelOverlap=False,
+            labelPadding=10,
+            labelFontSize=11,
+            titlePadding=14,
+        ),
     )
     x = alt.X(
         "annual_mean_t2m:Q",
@@ -675,17 +727,27 @@ def _annual_distribution_chart(
         alt.Tooltip("year:O", title="Năm"),
         alt.Tooltip("annual_mean_t2m:Q", title="T2M trung bình năm (°C)", format=".2f"),
     ]
-    color = _region_color_encoding(legend=None) if region_colors else alt.value(TEMP_ACCENT)
+    color = (
+        _region_color_encoding(_active_region_order(data), legend=None)
+        if region_colors
+        else alt.value(TEMP_ACCENT)
+    )
     base = alt.Chart(data).encode(x=x, y=y, color=color)
-
+    chart_padding = {"left": 42, "right": 6, "top": 2, "bottom": 4}
     if n_years < 3:
         points = base.mark_circle(size=95, opacity=0.9).encode(tooltip=tooltip)
         chart_height = height if height is not None else max(250, len(category_order) * 45)
-        return _finish_chart(points.properties(title=title), chart_height), False
+        return (
+            _finish_chart(
+                points.properties(padding=chart_padding),
+                chart_height,
+            ),
+            False,
+        )
 
-    boxes = base.mark_boxplot(size=24, extent="min-max", opacity=0.72)
-    points = base.mark_circle(size=28, opacity=0.28).encode(tooltip=tooltip)
-    chart = (boxes + points).properties(title=title)
+    boxes = base.mark_boxplot(size=30, extent="min-max", opacity=0.72)
+    points = base.mark_circle(size=32, opacity=0.28).encode(tooltip=tooltip)
+    chart = (boxes + points).properties(padding=chart_padding)
     chart_height = height if height is not None else max(280, len(category_order) * 48)
     return _finish_chart(chart, chart_height), True
 
@@ -701,13 +763,10 @@ def _with_moving_average(
     return result
 
 
-def _annual_trend_chart(
+def _single_location_trend_chart(
     annual_data: pd.DataFrame,
-    group_field: str,
-    group_title: str,
-    title: str,
-    region_colors: bool,
 ) -> tuple[alt.Chart, bool]:
+    group_field = "location_label"
     moving = _with_moving_average(annual_data, group_field)
     annual_plot = moving[[group_field, "year", "annual_mean_t2m"]].rename(
         columns={"annual_mean_t2m": "plot_value"}
@@ -721,16 +780,7 @@ def _annual_trend_chart(
     moving_plot["series"] = "TB trượt 5 năm"
     plot_data = pd.concat([annual_plot, moving_plot], ignore_index=True)
     has_moving_average = not moving_plot.empty
-
-    if region_colors:
-        color = _region_color_encoding(legend=_short_region_legend())
-    else:
-        color = alt.Color(
-            f"{group_field}:N",
-            title=group_title,
-            legend=alt.Legend(orient="bottom", columns=3),
-        )
-
+    series_domain = ["Trung bình năm", "TB trượt 5 năm"] if has_moving_average else ["Trung bình năm"]
     chart = (
         alt.Chart(plot_data)
         .mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=18))
@@ -741,25 +791,31 @@ def _annual_trend_chart(
                 title="T2M trung bình năm (°C)",
                 scale=alt.Scale(zero=False, padding=1),
             ),
-            color=color,
+            color=alt.Color(
+                "series:N",
+                title="Chuỗi",
+                scale=alt.Scale(
+                    domain=series_domain,
+                    range=[PRIMARY, TEMP_ACCENT][: len(series_domain)],
+                ),
+                legend=None,
+            ),
             strokeDash=alt.StrokeDash(
                 "series:N",
-                legend=alt.Legend(title="Chuỗi", symbolType="stroke"),
+                legend=None,
                 scale=alt.Scale(
-                    domain=["Trung bình năm", "TB trượt 5 năm"],
-                    range=[[1, 0], [7, 4]],
+                    domain=series_domain,
+                    range=[[1, 0], [7, 4]][: len(series_domain)],
                 ),
             ),
             tooltip=[
-                alt.Tooltip(f"{group_field}:N", title=group_title),
                 alt.Tooltip("year:O", title="Năm"),
                 alt.Tooltip("series:N", title="Chuỗi"),
                 alt.Tooltip("plot_value:Q", title="T2M (°C)", format=".2f"),
             ],
         )
-        .properties(title=title)
     )
-    return _finish_chart(chart, 290), has_moving_average
+    return _finish_chart(chart, 320), has_moving_average
 
 
 def _warn_if_months_missing(monthly_data: pd.DataFrame, group_field: str) -> None:
@@ -808,22 +864,21 @@ def _render_multi_region(tables: dict[str, pd.DataFrame]) -> None:
             },
         ]
     )
+    _vertical_space(26)
 
-    region_order = [region for region in REGION_ORDER if region in set(tables["region_month"]["region"])]
+    region_order = _active_region_order(tables["region_month"])
+    region_legend_items = [
+        (region, REGION_COLORS[region])
+        for region in region_order
+    ]
 
-    left_col, right_col = st.columns([1, 1], gap="medium")
-    with left_col:
-        st.altair_chart(_region_ranking_chart(region_period), width="stretch")
-    with right_col:
+    row1_left, row1_right = st.columns([0.9, 1.1], gap="medium")
+    with row1_left:
+        _render_chart_heading("Mức nhiệt và biên độ ngày–đêm")
         st.altair_chart(_region_scatter_chart(region_period), width="stretch")
-
-    st.altair_chart(
-        _dumbbell_chart(location_period, multi_region=True),
-        width="stretch",
-    )
-
-    heatmap_col, distribution_col = st.columns([1, 1], gap="medium")
-    with heatmap_col:
+        _render_discrete_legend("Vùng", region_legend_items)
+    with row1_right:
+        _render_chart_heading("Nhiệt độ theo tháng và vùng")
         _warn_if_months_missing(tables["region_month"], "region")
         st.altair_chart(
             _heatmap_chart(
@@ -831,43 +886,44 @@ def _render_multi_region(tables: dict[str, pd.DataFrame]) -> None:
                 row_field="region",
                 row_title="Vùng",
                 row_order=region_order,
-                title="Nhiệt độ theo tháng và vùng",
-                height=290,
+                height=300,
                 color_legend_bottom=True,
             ),
             width="stretch",
         )
-    with distribution_col:
+
+    _vertical_space(22)
+    dumbbell_height = _dumbbell_height(len(location_period))
+    row2_left, row2_right = st.columns([1.08, 0.92], gap="medium")
+    with row2_left:
+        _render_chart_heading("Khoảng Tmin–Tmax và vị trí Tmean")
+        st.altair_chart(
+            _dumbbell_chart(
+                location_period,
+                multi_region=True,
+                height=dumbbell_height,
+            ),
+            width="stretch",
+        )
+        _render_discrete_legend("Vùng", region_legend_items)
+    with row2_right:
+        _render_chart_heading("Phân bố nhiệt độ trung bình năm")
         distribution, is_boxplot = _annual_distribution_chart(
             tables["region_year"],
             category_field="region",
             category_title="Vùng",
             category_order=region_order,
-            title="Phân bố nhiệt độ trung bình năm",
             region_colors=True,
-            height=290,
+            height=360,
             show_category_axis_title=False,
         )
         if not is_boxplot:
             st.info("Giai đoạn quá ngắn; hiển thị giá trị trung bình từng năm.")
         st.altair_chart(distribution, width="stretch")
 
-    with st.expander("Xem diễn biến theo năm", expanded=False):
-        trend, has_moving_average = _annual_trend_chart(
-            tables["region_year"],
-            group_field="region",
-            group_title="Vùng",
-            title="Trung bình năm và TB trượt 5 năm",
-            region_colors=True,
-        )
-        if not has_moving_average:
-            st.info("Giai đoạn đang chọn chưa đủ cửa sổ 5 năm; không tạo moving average giả.")
-        st.altair_chart(trend, width="stretch")
-
 
 def _render_single_region(tables: dict[str, pd.DataFrame]) -> None:
     location_period = tables["location_period"]
-    region = str(location_period["region"].iloc[0])
     metrics = location_period.merge(
         tables["location_seasonality"][["location_id", "temperature_seasonality"]],
         on="location_id",
@@ -906,19 +962,23 @@ def _render_single_region(tables: dict[str, pd.DataFrame]) -> None:
             },
         ]
     )
+    _vertical_space(26)
 
-    left_col, right_col = st.columns([1, 1], gap="medium")
-    with left_col:
-        st.altair_chart(_location_ranking_chart(location_period, region), width="stretch")
-    with right_col:
-        st.altair_chart(
-            _dumbbell_chart(location_period, multi_region=False),
-            width="stretch",
-        )
-
-    location_order = location_period.sort_values("mean_t2m", ascending=False)["location_label"].tolist()
-    left_col, right_col = st.columns([1, 1], gap="medium")
-    with left_col:
+    location_order = (
+        location_period.sort_values("mean_t2m", ascending=False)["location_label"].tolist()
+    )
+    location_legend_items = [
+        (location, LOCATION_PALETTE[index % len(LOCATION_PALETTE)])
+        for index, location in enumerate(location_order)
+    ]
+    heatmap_height = min(360, max(300, 32 * len(location_period) + 100))
+    row1_left, row1_right = st.columns([0.9, 1.1], gap="medium")
+    with row1_left:
+        _render_chart_heading("Mức nhiệt và biên độ ngày–đêm")
+        st.altair_chart(_location_scatter_chart(metrics), width="stretch")
+        _render_discrete_legend("Điểm tham chiếu", location_legend_items)
+    with row1_right:
+        _render_chart_heading("Nhiệt độ theo tháng")
         _warn_if_months_missing(tables["location_month"], "location_id")
         st.altair_chart(
             _heatmap_chart(
@@ -926,36 +986,39 @@ def _render_single_region(tables: dict[str, pd.DataFrame]) -> None:
                 row_field="location_label",
                 row_title="Điểm tham chiếu",
                 row_order=location_order,
-                title=f"Nhiệt độ theo tháng trong {region}",
-                height=320,
+                height=heatmap_height,
+                color_legend_bottom=True,
             ),
             width="stretch",
         )
-    with right_col:
+
+    _vertical_space(22)
+    dumbbell_height = _dumbbell_height(len(location_period))
+    distribution_height = min(420, max(340, 36 * len(location_period) + 100))
+    row2_left, row2_right = st.columns([1.08, 0.92], gap="medium")
+    with row2_left:
+        _render_chart_heading("Khoảng Tmin–Tmax theo địa điểm")
+        st.altair_chart(
+            _dumbbell_chart(
+                location_period,
+                multi_region=False,
+                height=dumbbell_height,
+            ),
+            width="stretch",
+        )
+    with row2_right:
+        _render_chart_heading("Phân bố nhiệt độ trung bình năm")
         distribution, is_boxplot = _annual_distribution_chart(
             tables["location_year"],
             category_field="location_label",
             category_title="Điểm tham chiếu",
             category_order=location_order,
-            title="Phân bố nhiệt độ trung bình năm theo địa điểm",
             region_colors=False,
-            height=320,
+            height=distribution_height,
         )
         if not is_boxplot:
             st.info("Giai đoạn quá ngắn; hiển thị giá trị trung bình từng năm.")
         st.altair_chart(distribution, width="stretch")
-
-    with st.expander("Xem diễn biến theo năm", expanded=False):
-        trend, has_moving_average = _annual_trend_chart(
-            tables["location_year"],
-            group_field="location_label",
-            group_title="Điểm tham chiếu",
-            title=f"Diễn biến nhiệt độ năm trong {region}",
-            region_colors=False,
-        )
-        if not has_moving_average:
-            st.info("Giai đoạn đang chọn chưa đủ cửa sổ 5 năm; không tạo moving average giả.")
-        st.altair_chart(trend, width="stretch")
 
 
 def _render_single_location(tables: dict[str, pd.DataFrame]) -> None:
@@ -992,40 +1055,29 @@ def _render_single_location(tables: dict[str, pd.DataFrame]) -> None:
             },
         ]
     )
+    _vertical_space(26)
 
-    left_col, right_col = st.columns([1, 1], gap="medium")
+    left_col, right_col = st.columns([0.85, 1.15], gap="medium")
     with left_col:
+        _render_chart_heading("Chu kỳ nhiệt theo tháng")
         _warn_if_months_missing(tables["location_month"], "location_id")
         st.altair_chart(
-            _monthly_profile_chart(tables["location_month"], location_label),
+            _monthly_profile_chart(tables["location_month"]),
             width="stretch",
         )
         st.caption(f"Biên độ mùa: {_format_temperature(seasonality)}")
     with right_col:
-        distribution, is_boxplot = _annual_distribution_chart(
+        _render_chart_heading("Xu hướng nhiệt độ trung bình năm")
+        trend, has_moving_average = _single_location_trend_chart(
             tables["location_year"],
-            category_field="location_label",
-            category_title="Điểm tham chiếu",
-            category_order=[location_label],
-            title="Phân bố nhiệt độ trung bình năm",
-            region_colors=False,
-            height=320,
-        )
-        if not is_boxplot:
-            st.info("Giai đoạn quá ngắn; hiển thị giá trị trung bình từng năm.")
-        st.altair_chart(distribution, width="stretch")
-
-    with st.expander("Xem diễn biến theo năm", expanded=False):
-        trend, has_moving_average = _annual_trend_chart(
-            tables["location_year"],
-            group_field="location_label",
-            group_title="Điểm tham chiếu",
-            title=f"Diễn biến nhiệt độ năm tại {location_label}",
-            region_colors=False,
         )
         if not has_moving_average:
-            st.info("Giai đoạn đang chọn chưa đủ cửa sổ 5 năm; không tạo moving average giả.")
+            st.info("Chưa đủ 5 năm để tính trung bình trượt.")
         st.altair_chart(trend, width="stretch")
+        series_legend_items = [("Trung bình năm", PRIMARY)]
+        if has_moving_average:
+            series_legend_items.append(("TB trượt 5 năm", TEMP_ACCENT))
+        _render_discrete_legend("Chuỗi", series_legend_items)
 
 
 def render_temperature_comparison_tab(
@@ -1033,7 +1085,6 @@ def render_temperature_comparison_tab(
     filters: dict[str, object] | None = None,
 ) -> None:
     _ = placeholder_box
-    st.markdown('<div class="section-title">So sánh đặc điểm nhiệt độ</div>', unsafe_allow_html=True)
 
     try:
         daily = load_temperature_data()
@@ -1062,11 +1113,11 @@ def render_temperature_comparison_tab(
         st.info("Không đủ dữ liệu tổng hợp để hiển thị Tab 2.")
         return
 
-    start_year, end_year = _parse_period(active_filters, daily)
+    start_year, end_year = _parse_period(active_filters)
     n_regions = int(scoped["region"].nunique())
     n_locations = int(scoped["location_id"].nunique())
     layout = _determine_layout(scoped)
-    location_subset_active = bool(active_filters.get("locations", []))
+    location_subset_active = bool(active_filters.get("selected_reference_points", []))
     scope_caption = f"{start_year}–{end_year} · {n_regions} vùng · {n_locations} điểm"
     if location_subset_active:
         scope_caption += " · Chỉ tính trên các điểm đã chọn"

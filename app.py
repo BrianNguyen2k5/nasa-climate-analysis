@@ -81,7 +81,7 @@ def inject_css() -> None:
             }}
 
             .block-container {{
-                padding-top: 0.4rem;
+                padding-top: 3rem !important;
                 padding-bottom: 2.5rem;
                 padding-left: 1rem !important;
                 padding-right: 1rem !important;
@@ -341,7 +341,6 @@ def main() -> None:
         render_header("Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu")
     elif selected_tab == "Nhiệt độ":
         render_header("Phân tích đặc điểm nhiệt độ")
-        render_metric_row()
     elif selected_tab == "Mưa và độ ẩm":
         render_header("Phân tích đặc điểm mưa và độ ẩm")
         render_metric_row()
