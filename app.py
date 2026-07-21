@@ -331,7 +331,7 @@ def render_active_tab(filters: dict[str, object]) -> None:
     elif selected_tab == "Nhiệt độ":
         render_temperature_comparison_tab(placeholder_box, filters)
     elif selected_tab == "Mưa và độ ẩm":
-        render_rainfall_humidity_tab(placeholder_box)
+        render_rainfall_humidity_tab(placeholder_box, filters)
     elif selected_tab == "Yếu tố khí tượng":
         render_meteorological_factors_tab(placeholder_box, filters)
     elif selected_tab == "Thời tiết cực đoan":
