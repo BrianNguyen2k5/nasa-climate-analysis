@@ -81,7 +81,7 @@ def inject_css() -> None:
             }}
 
             .block-container {{
-                padding-top: 1.6rem;
+                padding-top: 0.4rem;
                 padding-bottom: 2.5rem;
             }}
 
@@ -94,8 +94,8 @@ def inject_css() -> None:
                 background: linear-gradient(135deg, #ffffff 0%, #eef8f7 54%, #fdf4eb 100%);
                 border: 1px solid var(--border);
                 border-radius: 7px;
-                padding: 24px 28px;
-                margin-bottom: 18px;
+                padding: 20px 28px;
+                margin-bottom: 6px;
             }}
 
             .eyebrow {{
@@ -104,7 +104,7 @@ def inject_css() -> None:
                 font-weight: 700;
                 letter-spacing: 0.08em;
                 text-transform: uppercase;
-                margin-bottom: 8px;
+                margin-bottom: 6px;
             }}
 
             .hero-title {{
@@ -148,7 +148,7 @@ def inject_css() -> None:
                 color: var(--muted);
                 font-size: 0.82rem;
                 font-weight: 650;
-                margin-bottom: 8px;
+                margin-bottom: 6px;
             }}
 
             .metric-value {{
@@ -161,6 +161,57 @@ def inject_css() -> None:
             .metric-caption {{
                 color: var(--muted);
                 font-size: 0.82rem;
+            }}
+            .overview-kpi-card {{
+                min-height: 132px;
+                height: 132px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+                text-align: center;
+                padding: 14px 12px;
+            }}
+
+            .overview-kpi-card .metric-label {{
+                width: 100%;
+                min-height: 28px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 8px;
+                text-align: center;
+            }}
+
+            .kpi-value-row {{
+                display: flex;
+                align-items: baseline;
+                justify-content: center;
+                gap: 4px;
+                color: var(--primary);
+                margin-bottom: 10px;
+                white-space: nowrap;
+            }}
+
+            .kpi-number {{
+                font-size: 1.58rem;
+                font-weight: 780;
+                line-height: 1;
+            }}
+
+            .kpi-unit {{
+                font-size: 0.9rem;
+                font-weight: 720;
+                line-height: 1;
+            }}
+
+            .overview-kpi-subject {{
+                width: 100%;
+                color: var(--muted);
+                font-size: 0.8rem;
+                font-weight: 700;
+                text-align: center;
+                line-height: 1.25;
             }}
 
             .placeholder-box {{
@@ -247,12 +298,7 @@ def render_header() -> None:
     st.markdown(
         """
         <section class="dashboard-hero">
-            <div class="eyebrow">Khí hậu Việt Nam | 1991-2025</div>
-            <div class="hero-title">Phân tích và so sánh đặc điểm khí hậu giữa 7 nhóm vùng và 20 điểm tham chiếu</div>
-            <p class="hero-subtitle">
-                Sườn dashboard học thuật cho phân tích nhiệt độ, mưa, độ ẩm, các yếu tố khí tượng và thời tiết cực đoan.
-                Các vùng trực quan hóa đang để placeholder để có thể gắn biểu đồ thật ở bước tiếp theo.
-            </p>
+            <div class="hero-title">Phân tích đặc điểm khí hậu giữa 6 nhóm vùng và 20 điểm tham chiếu</div>
         </section>
         """,
         unsafe_allow_html=True,
@@ -262,7 +308,7 @@ def render_header() -> None:
 def render_metric_row() -> None:
     cols = st.columns(4)
     with cols[0]:
-        metric_card("Nhóm vùng", "7", "Vùng khí hậu chính")
+        metric_card("Nhóm vùng", "6", "Vùng khí hậu chính")
     with cols[1]:
         metric_card("Địa điểm", "20", "Điểm đại diện")
     with cols[2]:
@@ -271,9 +317,11 @@ def render_metric_row() -> None:
         metric_card("Trạng thái dữ liệu", "Chưa nạp", "Dashboard vẫn chạy độc lập")
 
 
-def render_active_tab(selected_tab: str) -> None:
+def render_active_tab(filters: dict[str, object]) -> None:
+    selected_tab = str(filters.get("selected_tab", "Tổng quan"))
+
     if selected_tab == "Tổng quan":
-        render_overview_regions_tab(placeholder_box)
+        render_overview_regions_tab(placeholder_box, filters)
     elif selected_tab == "Nhiệt độ":
         render_temperature_comparison_tab(placeholder_box)
     elif selected_tab == "Mưa và độ ẩm":
@@ -285,15 +333,15 @@ def render_active_tab(selected_tab: str) -> None:
     else:
         render_ai_assistant_tab(placeholder_box)
 
-
 def main() -> None:
     configure_page()
     inject_css()
     inject_sidebar_css()
-    selected_tab = render_sidebar()
+    filters = render_sidebar()
     render_header()
-    render_metric_row()
-    render_active_tab(selected_tab)
+    if filters.get("selected_tab") != "Tổng quan":
+        render_metric_row()
+    render_active_tab(filters)
 
 
 if __name__ == "__main__":
