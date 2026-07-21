@@ -1,135 +1,259 @@
 import streamlit as st
-import plotly.express as px
 import pandas as pd
-import os
+import altair as alt
+import plotly.express as px
+from pathlib import Path
+import html
 
-# Hàm bổ trợ để đọc dữ liệu (Nháp)
-@st.cache_data
-def load_data():
-    path="data/nasa_power_vietnam_daily_clean.csv"
-    if os.path.exists(path):
-        return pd.read_csv(path)
-    return None
+# --- Cấu hình hằng số ---
+DATA_PATH = Path("data/nasa_power_vietnam_daily_clean.csv")
 
-def render_rainfall_humidity_tab(placeholder_box) -> None:
-    st.markdown('<div class="section-title">So sánh mưa và độ ẩm</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<p class="small-note">Khu vực dành cho lượng mưa, mùa mưa, độ ẩm tương đối.</p>',
-        unsafe_allow_html=True,
+REGION_VIETNAMESE = {
+    "Bắc Trung Bộ": "Bắc Trung Bộ",
+    "Nam Trung Bộ": "Nam Trung Bộ",
+    "Trung du và miền núi phía Bắc": "Trung du và miền núi phía Bắc",
+    "Đông Nam Bộ": "Đông Nam Bộ",
+    "Đồng bằng sông Cửu Long": "Đồng bằng sông Cửu Long",
+    "Đồng bằng sông Hồng": "Đồng bằng sông Hồng",
+}
+
+LOCATION_VIETNAMESE = {
+    "Buon Ma Thuot": "Buôn Ma Thuột",
+    "Ca Mau": "Cà Mau",
+    "Can Tho": "Cần Thơ",
+    "Chau Doc": "Châu Đốc",
+    "Da Lat": "Đà Lạt",
+    "Da Nang": "Đà Nẵng",
+    "Dien Bien Phu": "Điện Biên Phủ",
+    "Dong Hoi": "Đồng Hới",
+    "Ha Noi": "Hà Nội",
+    "Hai Phong": "Hải Phòng",
+    "Ho Chi Minh City": "TP. Hồ Chí Minh",
+    "Hue": "Huế",
+    "Lao Cai": "Lào Cai",
+    "Nha Trang": "Nha Trang",
+    "Phan Rang-Thap Cham": "Phan Rang - Tháp Chàm",
+    "Phu Quoc": "Phú Quốc",
+    "Pleiku": "Pleiku",
+    "Quy Nhon": "Quy Nhơn",
+    "Vinh": "Vinh",
+    "Vung Tau": "Vũng Tàu",
+}
+
+REGION_COLORS = {
+    "Bắc Trung Bộ": "#8B5CF6",
+    "Nam Trung Bộ": "#F59E0B",
+    "Trung du và miền núi phía Bắc": "#3B82F6",
+    "Đông Nam Bộ": "#EF4444",
+    "Đồng bằng sông Cửu Long": "#06B6D4",
+    "Đồng bằng sông Hồng": "#10B981",
+}
+
+
+# --- Hàm hỗ trợ ---
+def _escape(val: object) -> str:
+    return html.escape(str(val), quote=True)
+
+
+@st.cache_data(show_spinner=False)
+def load_rainfall_humidity_data() -> pd.DataFrame:
+    usecols = [
+        "location_name",
+        "region",
+        "latitude",
+        "longitude",
+        "year",
+        "month",
+        "PRECTOTCORR",
+         "RH2M",
+        "heavy_rain_day"
+    ]
+    df = pd.read_csv(DATA_PATH, usecols=usecols)
+    df["region_vn"] = df["region"].map(REGION_VIETNAMESE).fillna(df["region"])
+    df["location_vn"] = df["location_name"].map(LOCATION_VIETNAMESE).fillna(df["location_name"])
+    return df
+
+
+def filter_data(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
+    period = filters.get("year_range") or (1991, 2025)
+    filtered = df[df["year"].between(int(period[0]), int(period[1]))]
+    regions = filters.get("selected_regions")
+    if regions:
+        filtered = filtered[filtered["region_vn"].isin(regions)]
+    locations = filters.get("selected_reference_points")
+    if locations:
+        filtered = filtered[filtered["location_name"].isin(locations) | filtered["location_vn"].isin(locations)]
+    return filtered
+
+
+# --- Chú thích vùng ---
+def render_region_legend():
+    items_html = "".join([
+        f'<div class="tab3-legend-item">'
+        f'<span class="tab3-legend-dot" style="background:{color};"></span>'
+        f'<span>{_escape(name)}</span></div>'
+        for name, color in REGION_COLORS.items()
+    ])
+    st.markdown(f"""
+        <style>
+        .tab3-legend-box {{ 
+            background: #ffffff; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 8px; 
+            padding: 16px 20px; 
+            margin-top: 14px; 
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04); 
+            height: 310px; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+        }}
+        .tab3-legend-header {{ 
+            font-size: 14px; 
+            font-weight: 750; 
+            color: #1e3a5f; 
+            margin-bottom: 12px; 
+            padding-bottom: 8px; 
+            border-bottom: 1px dashed #e2e8f0; 
+        }}
+        .tab3-legend-item {{ 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            font-size: 12px; 
+            color: #334155; 
+            margin-bottom: 8px; 
+        }}
+        .tab3-legend-dot {{ 
+            width: 12px; 
+            height: 12px; 
+            border-radius: 50%; 
+            display: inline-block; 
+            flex-shrink: 0; 
+        }}
+        </style>
+        <div class="tab3-legend-box">
+            <div class="tab3-legend-header">Nhóm các vùng</div>
+            {items_html}
+        </div>
+    """, unsafe_allow_html=True)
+
+
+# --- Biểu đồ Altair ---
+def draw_line_chart(df, y_col, y_label):
+    df_monthly = df.groupby(["month", "region_vn"])[y_col].mean().reset_index()
+    chart = (
+        alt.Chart(df_monthly).mark_line(point=True).encode(
+            x=alt.X("month:O", title="Tháng", axis=alt.Axis(labelAngle=0)),
+            y=alt.Y(f"{y_col}:Q", title=y_label, scale=alt.Scale(zero=False)),
+            color=alt.Color("region_vn:N",
+                            scale=alt.Scale(domain=list(REGION_COLORS.keys()), range=list(REGION_COLORS.values())),
+                            legend=None),
+            tooltip=[alt.Tooltip("month:O", title="Tháng"), alt.Tooltip("region_vn:N", title="Vùng"),
+                     alt.Tooltip(f"{y_col}:Q", title=y_label, format=".2f")]
+        )
+        .properties(height=300, background="#FFFFFF", padding={"left": 10, "right": 10, "top": 10, "bottom": 10})
+        .configure_view(fill="#FFFFFF", stroke="transparent")
+        .configure_axis(labelFont="Plus Jakarta Sans", titleFont="Plus Jakarta Sans", labelColor="#475569",
+                        titleColor="#1E3A5F", gridColor="#F1F5F9")
     )
+    st.altair_chart(chart, use_container_width=True)
 
-    df_raw = load_data()
 
-    # Kiểm tra nếu chưa có dữ liệu
-    if df_raw is None:
-        st.warning("Không tìm thấy dữ liệu")
-        return
+def draw_heatmap(df):
+    df_hm = df.groupby(["month", "region_vn"])["PRECTOTCORR"].mean().reset_index()
+    chart = (
+        alt.Chart(df_hm).mark_rect().encode(
+            x=alt.X("month:O", title="Tháng", axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("region_vn:N", title="Vùng", axis=alt.Axis(labelLimit=300)),
+            color=alt.Color("PRECTOTCORR:Q", title="Lượng mưa (mm)", scale=alt.Scale(scheme="blues")),
+            tooltip=[alt.Tooltip("month:O", title="Tháng"), alt.Tooltip("region_vn:N", title="Vùng"),
+                     alt.Tooltip("PRECTOTCORR:Q", title="Lượng mưa trung bình (mm)", format=".2f")]
+        )
+        .properties(height=310, background="#FFFFFF", padding={"left": 10, "right": 10, "top": 10, "bottom": 10})
+        .configure_view(fill="#FFFFFF", stroke="transparent")
+        .configure_axis(labelFont="Plus Jakarta Sans", titleFont="Plus Jakarta Sans", gridColor="#F1F5F9")
+    )
+    st.altair_chart(chart, use_container_width=True)
 
-    # --- 1. MAPPING ĐỂ LỌC---
-    REGION_MAP = {
-        "Bắc Bộ": "North", "Bắc Trung Bộ": "North Central", "Nam Trung Bộ": "South Central Coast",
-        "Tây Nguyên": "Central Highlands", "Đông Nam Bộ": "Southeast",
-        "Tây Nam Bộ": "Mekong Delta", "Trung Bộ": "Central"
+
+def draw_map(df):
+    df_map = df.groupby(["location_vn", "latitude", "longitude"])["heavy_rain_day"].sum().reset_index()
+    fig = px.scatter_mapbox(
+        df_map, lat="latitude", lon="longitude", size="heavy_rain_day", color="heavy_rain_day",
+        hover_name="location_vn", color_continuous_scale="Tealgrn",
+        zoom=3.75, center={"lat": 16.1, "lon": 108.3},
+        mapbox_style="carto-positron",
+        labels={"heavy_rain_day": "Số ngày mưa lớn"},
+        hover_data={"latitude": False, "longitude": False, "heavy_rain_day": True}
+    )
+    fig.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=310, paper_bgcolor="white",
+                      coloraxis_colorbar_title="Số ngày")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# --- Hàm render chính ---
+def render_rainfall_humidity_tab(placeholder_box, filters: dict | None = None) -> None:
+    # CSS ẩn KPI hàng trên của app.py
+    st.markdown("""
+        <style>
+        div[data-testid="stVerticalBlock"] > div:has(div.metric-card):not(:has(span.kpi-number)) {
+            display: none !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    active_filters = filters or {
+        "selected_regions": st.session_state.get("selected_regions", []),
+        "selected_reference_points": st.session_state.get("selected_reference_points", []),
+        "year_range": st.session_state.get("year_range", (1991, 2025)),
     }
 
-    # Mapping ngược để Việt hóa tên trên biểu đồ
-    REVERSE_MAP = {
-        "North": "Bắc Bộ", "North Central": "Bắc Trung Bộ",
-        "South Central Coast": "Nam Trung Bộ", "Central Highlands": "Tây Nguyên",
-        "Southeast": "Đông Nam Bộ", "Mekong Delta": "Tây Nam Bộ", "Central": "Trung Bộ"
-    }
-
-    LOCATION_MAP = {
-        "Hà Nội": "Ha Noi", "Lào Cai": "Lao Cai", "Điện Biên": "Dien Bien Phu",
-        "Châu Đốc": "Chau Doc", "Hải Phòng": "Hai Phong", "Vũng Tàu": "Vung Tau",
-        "Vinh": "Vinh", "Huế": "Hue", "Đà Nẵng": "Da Nang",
-        "Quy Nhơn": "Quy Nhon", "Nha Trang": "Nha Trang", "Phan Rang - Tháp Chàm": "Phan Rang-Thap Cham",
-        "Đồng Hới": "Dong Hoi", "Pleiku": "Pleiku", "Buôn Ma Thuột": "Buon Ma Thuot",
-        "Đà Lạt": "Da Lat", "TP. Hồ Chí Minh": "Ho Chi Minh City",
-        "Cần Thơ": "Can Tho", "Cà Mau": "Ca Mau", "Phú Quốc": "Phu Quoc"
-    }
-
-    # --- 2. LẤY FILTER ---
-    raw_region = st.session_state.get("sb_regions", "Tất cả 7 nhóm vùng")
-    raw_locations = st.session_state.get("sb_location", [])
-    year_range = st.session_state.get("sb_year_range", (1991, 2025))
-
-    df = df_raw.copy()
-    df = df[(df['year'] >= year_range[0]) & (df['year'] <= year_range[1])]
-
-    if raw_region != "Tất cả 7 nhóm vùng":
-        ds_val = REGION_MAP.get(raw_region)
-        df = df[df['region'].isin(ds_val)] if isinstance(ds_val, list) else df[df['region'] == ds_val]
-
-    if raw_locations:
-        ds_locs = [LOCATION_MAP.get(loc, loc) for loc in raw_locations]
-        df = df[df['location_name'].isin(ds_locs)]
-
+    df = filter_data(load_rainfall_humidity_data(), active_filters)
     if df.empty:
-        st.info("Không tìm thấy dữ liệu. Hãy chọn địa điểm thuộc vùng tương ứng.")
+        st.info("Không có dữ liệu phù hợp.")
         return
 
-    # Nhãn Việt hóa cho Plotly
-    VN_LABELS = {'avg_rain': 'Lượng mưa', 'avg_hum': 'Độ ẩm (%)', 'month_name': 'Tháng', 'region': 'Vùng'}
-    month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    # 1. KPIs
+    loc_stats = df.groupby("location_vn").agg(
+        {"PRECTOTCORR": "mean", "RH2M": "mean", "heavy_rain_day": "sum"}).reset_index()
+    max_rain = loc_stats.loc[loc_stats["PRECTOTCORR"].idxmax()]
+    max_hum = loc_stats.loc[loc_stats["RH2M"].idxmax()]
+    max_heavy_days = loc_stats.loc[loc_stats["heavy_rain_day"].idxmax()]
 
+    kcols = st.columns(4)
+    kpis = [
+        {"t": "Lượng mưa trung bình cao nhất", "v": f"{max_rain['PRECTOTCORR']:.2f} mm", "s": max_rain["location_vn"]},
+        {"t": "Độ ẩm trung bình cao nhất", "v": f"{max_hum['RH2M']:.1f} %", "s": max_hum["location_vn"]},
+        {"t": "Số ngày mưa lớn nhiều nhất", "v": f"{int(max_heavy_days['heavy_rain_day'])} ngày", "s": max_heavy_days["location_vn"]},
+        {"t": "Độ ẩm trung bình toàn khu vực", "v": f"{df['RH2M'].mean():.1f} %", "s": "Dữ liệu tổng hợp"}
+    ]
+    for col, k in zip(kcols, kpis):
+        with col:
+            st.markdown(f"""
+                <div class="metric-card overview-kpi-card">
+                    <div class="metric-label">{k['t']}</div>
+                    <div class="kpi-value-row"><span class="kpi-number">{k['v']}</span></div>
+                    <div class="overview-kpi-subject">{k['s']}</div>
+                </div>
+            """, unsafe_allow_html=True)
 
-    # --- 3. HÀNG 1: BIỂU ĐỒ ĐƯỜNG---
-    r_col, h_col = st.columns(2)
+    # 2. Hàng 1
+    col1, col2, col3 = st.columns([1, 1, 0.5])
+    with col1:
+        st.markdown('<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Xu thế lượng mưa trung bình theo tháng</div>', unsafe_allow_html=True)
+        draw_line_chart(df, "PRECTOTCORR", "Lượng mưa (mm)")
+    with col2:
+        st.markdown('<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Xu thế độ ẩm tương đối trung bình</div>', unsafe_allow_html=True)
+        draw_line_chart(df, "RH2M", "Độ ẩm (%)")
+    with col3:
+        render_region_legend()
 
-    # Line Chart Xu thế lượng mưa TB
-    with r_col:
-        # Gom nhóm dữ liệu để vẽ
-        df_r = df.groupby(['region', 'month', 'month_name'])['PRECTOTCORR'].mean().reset_index().sort_values('month')
-        df_r.rename(columns={'PRECTOTCORR': 'avg_rain'}, inplace=True)
-
-        fig_r = px.line(df_r, x='month_name', y='avg_rain', color='region',
-                        title="Xu thế lượng mưa TB theo tháng (mm/ngày)", markers=True, labels=VN_LABELS)
-
-        # Việt hóa tên vùng trong Legend
-        fig_r.for_each_trace(lambda t: t.update(name=REVERSE_MAP.get(t.name, t.name)))
-        fig_r.update_layout(xaxis_title="Tháng", yaxis_title="Lượng mưa (mm/ngày)",
-                            legend=dict(orientation="h", y=-0.2), legend_title_text="Vùng")
-        st.plotly_chart(fig_r, use_container_width=True)
-
-    # Line Chart Xu thế độ ẩm tương đối TB
-    with h_col:
-        df_h = df.groupby(['region', 'month', 'month_name'])['RH2M'].mean().reset_index().sort_values('month')
-        df_h.rename(columns={'RH2M': 'avg_hum'}, inplace=True)
-
-        fig_h = px.line(df_h, x='month_name', y='avg_hum', color='region',
-                        title="Xu thế độ ẩm tương đối TB (%)", markers=True, labels=VN_LABELS)
-
-        fig_h.for_each_trace(lambda t: t.update(name=REVERSE_MAP.get(t.name, t.name)))
-        fig_h.update_layout(xaxis_title="Tháng", yaxis_title="Độ ẩm (%)",
-                            legend=dict(orientation="h", y=-0.2), legend_title_text="Vùng")
-        st.plotly_chart(fig_h, use_container_width=True)
-
-    # --- 4. HÀNG 2: HEATMAP, MAP, STACKED BAR ---
-    c1, c2 = st.columns(2)
-
-    # Heatmap Cường độ mưa
-    with c1:
-        # Heatmap: Việt hóa trục Y và Colobar
-        fig_hm = px.density_heatmap(df_r, x='month_name', y='region', z='avg_rain',
-                                    title="Cường độ mưa (Heatmap)", color_continuous_scale='Blues', height=450,
-                                    labels={'avg_rain': 'Lượng mưa', 'month_name': 'Tháng', 'region': 'Vùng'},
-                                    category_orders={"month_name": month_order})
-        fig_hm.update_coloraxes(colorbar_title_text='Lượng mưa')
-
-        # Việt hóa các nhãn vùng trên trục đứng
-        fig_hm.update_yaxes(ticktext=[REVERSE_MAP.get(label, label) for label in df_r['region'].unique()],
-                            tickvals=df_r['region'].unique())
-        st.plotly_chart(fig_hm, use_container_width=True)
-
-    # Bản đồ số ngày mưa lớn
-    with c2:
-        df_m = df.groupby(['location_name', 'latitude', 'longitude'])['heavy_rain_day'].sum().reset_index()
-        fig_m = px.scatter_mapbox(df_m, lat="latitude", lon="longitude", size="heavy_rain_day",
-                                  color="heavy_rain_day", hover_name="location_name",
-                                  zoom=4.2, center={"lat": 16.4, "lon": 107.5},
-                                  title="Số ngày mưa lớn (Lượng mưa > 50mm)", labels={'heavy_rain_day': 'Số ngày'},
-                                  color_continuous_scale='Tealgrn', mapbox_style="carto-positron")
-
-        fig_m.update_layout(margin=dict(t=30, b=0, l=0, r=0), coloraxis_colorbar_title_text='Số ngày')
-        st.plotly_chart(fig_m, use_container_width=True)
+    # 3. Hàng 2
+    col4, col5 = st.columns([1.3, 1])
+    with col4:
+        st.markdown('<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Cường độ mưa theo vùng</div>', unsafe_allow_html=True)
+        draw_heatmap(df)
+    with col5:
+        st.markdown('<div class="section-title" style="margin-top: 8px; margin-bottom: 6px; font-size: 15px; font-weight: 750; color: #1E3A5F;">Số ngày mưa lớn theo địa điểm</div>', unsafe_allow_html=True)
+        draw_map(df)
