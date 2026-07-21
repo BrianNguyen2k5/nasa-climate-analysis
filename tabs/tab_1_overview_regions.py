@@ -314,7 +314,7 @@ def build_yearly_trend(df: pd.DataFrame, variable: str) -> pd.DataFrame:
 def render_yearly_trend_chart(df: pd.DataFrame, filters: dict[str, object]) -> None:
     st.markdown(
         """
-        <div class="section-title" style="margin-top: 0; margin-bottom: 4px;">
+        <div class="section-title" style="margin-top: 10px; margin-bottom: 4px;">
             Xu hướng theo năm
         </div>
         """,
@@ -837,7 +837,7 @@ def render_overview_regions_tab(placeholder_box, filters: dict[str, object] | No
     left, right = st.columns([1.35, 1])
     with left:
         st.markdown(
-            '<div class="section-title" style="margin-top: 0; margin-bottom: 4px;">'
+            '<div class="section-title" style="margin-top: 10px; margin-bottom: 4px;">'
             'Bản đồ các tỉnh/thành</div>',
             unsafe_allow_html=True,
         )

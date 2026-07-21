@@ -85,7 +85,7 @@ def inject_css() -> None:
             }}
 
             .block-container {{
-                padding-top: 3rem !important;
+                padding-top: 2rem !important;
                 padding-bottom: 2.5rem;
                 padding-left: 1rem !important;
                 padding-right: 1rem !important;
@@ -358,7 +358,7 @@ def main() -> None:
     elif selected_tab == "Yếu tố khí tượng":
         render_header("Phân tích đặc điểm gió, áp suất và bức xạ mặt trời")
     elif selected_tab == "Thời tiết cực đoan":
-        pass
+        render_header("Phân tích thời tiết cực đoan")
     else:
         # Tab AI Assistant
         render_header("Data Visualization AI Assistance")

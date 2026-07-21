@@ -172,8 +172,7 @@ def inject_sidebar_css() -> None:
             /* Navigation Button */
             [data-testid="stSidebar"] [role="radiogroup"] label {
                 position: relative !important;
-                width: 100% !important;
-                max-width: 100% !important;
+                width: 120% !important;
                 min-height: 42px !important;
                 box-sizing: border-box !important;
                 border: 1px solid #bbb !important;
@@ -194,13 +193,20 @@ def inject_sidebar_css() -> None:
                     transform 160ms ease !important;
             }
 
-            /* Hide Only the Native Radio Input */
-            [data-testid="stSidebar"] [role="radiogroup"] label input[type="radio"] {
+            /* Hide the Radio Circle Indicator Completely */
+            [data-testid="stSidebar"] [role="radiogroup"] label [data-baseweb="radio"] {
                 position: absolute !important;
-                width: 1px !important;
-                height: 1px !important;
+                width: 0 !important;
+                height: 0 !important;
                 opacity: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
                 pointer-events: none !important;
+                overflow: hidden !important;
+            }
+
+            [data-testid="stSidebar"] [role="radiogroup"] label [data-baseweb="radio"] * {
+                display: none !important;
             }
 
             /* Keep the Text Container Inside the Button */
