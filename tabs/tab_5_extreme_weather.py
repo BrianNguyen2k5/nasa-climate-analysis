@@ -190,15 +190,6 @@ def inject_extreme_weather_css() -> None:
     st.markdown(
         """
         <style>
-            .block-container {
-                padding-top: 0.4rem !important;
-                padding-bottom: 2.5rem !important;
-                padding-left: 1rem !important;
-                padding-right: 1rem !important;
-                max-width: 98% !important;
-                width: 100% !important;
-            }
-
             .block-container [data-testid="stVerticalBlock"] {
                 gap: 1rem !important;
             }
