@@ -111,6 +111,7 @@ def _render_chart_heading(title: str) -> None:
 def _render_discrete_legend(
     title: str,
     items: list[tuple[str, str]],
+    boxed: bool = False,
 ) -> None:
     item_markup = "".join(
         (
@@ -121,9 +122,15 @@ def _render_discrete_legend(
         )
         for label, color in items
     )
+    container_style = "margin:0 0 2px 0;color:#475569;font-size:12px;line-height:1.3;"
+    if boxed:
+        container_style += (
+            "background:#FFFFFF;border:1px solid #D9E1EC;border-radius:8px;"
+            "padding:10px 12px;box-sizing:border-box;"
+        )
     st.markdown(
         (
-            '<div style="margin:0 0 2px 0;color:#475569;font-size:12px;line-height:1.3;">'
+            f'<div style="{container_style}">'
             f'<div style="color:#1E3A5F;font-weight:600;margin-bottom:4px;">{html.escape(title)}</div>'
             '<div style="display:flex;flex-wrap:wrap;align-items:center;column-gap:18px;row-gap:6px;">'
             f"{item_markup}"
@@ -139,9 +146,13 @@ def _dumbbell_height(row_count: int) -> int:
 
 
 def _finish_chart(chart: alt.Chart, height: int) -> alt.Chart:
+    if chart.padding is alt.Undefined:
+        chart = chart.properties(
+            padding={"left": 10, "right": 10, "top": 10, "bottom": 10}
+        )
     return (
-        chart.properties(height=height)
-        .configure_view(stroke=None)
+        chart.properties(height=height, background="#FFFFFF")
+        .configure_view(fill="#FFFFFF", stroke=None)
         .configure_axis(
             labelColor="#475569",
             titleColor=PRIMARY,
@@ -420,15 +431,18 @@ def _render_kpi_cards(items: list[dict[str, object]]) -> None:
     for column, item in zip(columns, items):
         with column:
             label = html.escape(str(item["label"]))
-            value = html.escape(_format_temperature(float(item["value"])))
+            formatted_value = _format_temperature(float(item["value"]))
+            number, unit = formatted_value.split(" ", 1)
             subject = html.escape(str(item["subject"]))
-            caption = html.escape(str(item.get("caption", "")))
             st.markdown(
                 f"""
-                <div class="metric-card">
+                <div class="metric-card overview-kpi-card">
                     <div class="metric-label">{label}</div>
-                    <div class="metric-value">{value}</div>
-                    <div class="metric-caption"><strong>{subject}</strong><br>{caption}</div>
+                    <div class="kpi-value-row">
+                        <span class="kpi-number">{html.escape(number)}</span>
+                        <span class="kpi-unit">{html.escape(unit)}</span>
+                    </div>
+                    <div class="overview-kpi-subject">{subject}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -442,18 +456,38 @@ def _vertical_space(height: int = 24) -> None:
     )
 
 
-def _region_scatter_chart(region_period: pd.DataFrame) -> alt.Chart:
-    active_regions = _active_region_order(region_period)
+def _region_scatter_chart(location_period: pd.DataFrame) -> alt.Chart:
+    active_regions = _active_region_order(location_period)
+    label_offsets = {
+        "Lào Cai": (5, 5, "left", "top"),
+        "Điện Biên Phủ": (5, -5, "left", "bottom"),
+        "Pleiku": (5, -5, "left", "bottom"),
+        "Buôn Ma Thuột": (8, 8, "left", "top"),
+        "Hà Nội": (5, 6, "left", "top"),
+        "Đà Lạt": (-5, 5, "right", "top"),
+        "Hải Phòng": (5, -5, "left", "bottom"),
+        "Vinh": (5, -5, "left", "bottom"),
+        "Đà Nẵng": (5, -5, "left", "bottom"),
+        "Huế": (0, 6, "center", "top"),
+        "Phan Rang - Tháp Chàm": (-8, 6, "right", "top"),
+        "TP. Hồ Chí Minh": (-8, -10, "right", "bottom"),
+        "Cần Thơ": (-5, 0, "right", "middle"),
+        "Châu Đốc": (11, -5, "center", "bottom"),
+        "Vũng Tàu": (-5, 5, "right", "top"),
+        "Cà Mau": (-5, 5, "right", "top"),
+        "Phú Quốc": (-5, -5, "right", "bottom"),
+        "Đồng Hới": (-5, -5, "right", "bottom"),
+        "Quy Nhơn": (5, -5, "left", "bottom"),
+        "Nha Trang": (-5, 5, "right", "top"),
+    }
+    active_location_labels = set(location_period["location_label"].astype(str))
     tooltip = [
+        alt.Tooltip("location_label:N", title="Điểm tham chiếu"),
         alt.Tooltip("region:N", title="Vùng"),
         alt.Tooltip("mean_t2m:Q", title="T2M trung bình (°C)", format=".2f"),
         alt.Tooltip("mean_daily_range:Q", title="Biên độ ngày-đêm TB (°C)", format=".2f"),
-        alt.Tooltip("n_locations:Q", title="Số điểm đang dùng", format=".0f"),
-        alt.Tooltip("within_region_spread:Q", title="Chênh lệch nội vùng (°C)", format=".2f"),
-        alt.Tooltip("hottest_location:N", title="Điểm nóng nhất"),
-        alt.Tooltip("coolest_location:N", title="Điểm mát nhất"),
     ]
-    base = alt.Chart(region_period).encode(
+    base = alt.Chart(location_period).encode(
         x=alt.X(
             "mean_t2m:Q",
             title="T2M trung bình (°C)",
@@ -477,14 +511,38 @@ def _region_scatter_chart(region_period: pd.DataFrame) -> alt.Chart:
             ),
         ),
     )
-    points = base.mark_circle(size=135, opacity=0.9).encode(
+    points = base.mark_circle(
+        size=95,
+        opacity=0.86,
+        stroke="white",
+        strokeWidth=1,
+    ).encode(
         color=_region_color_encoding(
             active_regions,
             legend=None,
         ),
         tooltip=tooltip,
     )
-    chart = points
+    labels = [
+        base.transform_filter(alt.datum.location_label == location_label)
+        .mark_text(
+            align=align,
+            baseline=baseline,
+            dx=dx,
+            dy=dy,
+            fontSize=10,
+            color="#475569",
+            clip=False,
+            limit=0,
+        )
+        .encode(
+            text=alt.Text("location_label:N"),
+            tooltip=tooltip,
+        )
+        for location_label, (dx, dy, align, baseline) in label_offsets.items()
+        if location_label in active_location_labels
+    ]
+    chart = alt.layer(points, *labels)
     return _finish_chart(chart, 310)
 
 
@@ -600,7 +658,7 @@ def _dumbbell_chart(
     max_points = base.mark_circle(size=48, opacity=0.72).encode(x="mean_tmax:Q")
     mean_points = base.mark_circle(size=115, stroke="white", strokeWidth=1.2).encode(x="mean_t2m:Q")
     chart = (ranges + min_points + max_points + mean_points).properties(
-        padding={"left": 28, "right": 8, "top": 2, "bottom": 4}
+        padding={"left": 28, "right": 10, "top": 10, "bottom": 10}
     )
     if height is None:
         height = _dumbbell_height(len(location_order))
@@ -733,7 +791,7 @@ def _annual_distribution_chart(
         else alt.value(TEMP_ACCENT)
     )
     base = alt.Chart(data).encode(x=x, y=y, color=color)
-    chart_padding = {"left": 42, "right": 6, "top": 2, "bottom": 4}
+    chart_padding = {"left": 42, "right": 10, "top": 10, "bottom": 10}
     if n_years < 3:
         points = base.mark_circle(size=95, opacity=0.9).encode(tooltip=tooltip)
         chart_height = height if height is not None else max(250, len(category_order) * 45)
@@ -842,29 +900,25 @@ def _render_multi_region(tables: dict[str, pd.DataFrame]) -> None:
                 "label": "Vùng nóng nhất",
                 "value": hottest_region["mean_t2m"],
                 "subject": hottest_region["region"],
-                "caption": "T2M trung bình",
             },
             {
                 "label": "Vùng mát nhất",
                 "value": coolest_region["mean_t2m"],
                 "subject": coolest_region["region"],
-                "caption": "T2M trung bình",
             },
             {
                 "label": "Điểm tham chiếu nóng nhất",
                 "value": hottest_location["mean_t2m"],
                 "subject": hottest_location["location_label"],
-                "caption": str(hottest_location["region"]),
             },
             {
                 "label": "Điểm tham chiếu mát nhất",
                 "value": coolest_location["mean_t2m"],
                 "subject": coolest_location["location_label"],
-                "caption": str(coolest_location["region"]),
             },
         ]
     )
-    _vertical_space(26)
+    _vertical_space(8)
 
     region_order = _active_region_order(tables["region_month"])
     region_legend_items = [
@@ -872,11 +926,11 @@ def _render_multi_region(tables: dict[str, pd.DataFrame]) -> None:
         for region in region_order
     ]
 
-    row1_left, row1_right = st.columns([0.9, 1.1], gap="medium")
+    row1_left, row1_right = st.columns([0.9, 1.1], gap="small")
     with row1_left:
         _render_chart_heading("Mức nhiệt và biên độ ngày–đêm")
-        st.altair_chart(_region_scatter_chart(region_period), width="stretch")
-        _render_discrete_legend("Vùng", region_legend_items)
+        st.altair_chart(_region_scatter_chart(location_period), width="stretch")
+        _render_discrete_legend("Vùng", region_legend_items, boxed=True)
     with row1_right:
         _render_chart_heading("Nhiệt độ theo tháng và vùng")
         _warn_if_months_missing(tables["region_month"], "region")
@@ -886,7 +940,7 @@ def _render_multi_region(tables: dict[str, pd.DataFrame]) -> None:
                 row_field="region",
                 row_title="Vùng",
                 row_order=region_order,
-                height=300,
+                height=310,
                 color_legend_bottom=True,
             ),
             width="stretch",
@@ -894,7 +948,7 @@ def _render_multi_region(tables: dict[str, pd.DataFrame]) -> None:
 
     _vertical_space(22)
     dumbbell_height = _dumbbell_height(len(location_period))
-    row2_left, row2_right = st.columns([1.08, 0.92], gap="medium")
+    row2_left, row2_right = st.columns([1.08, 0.92], gap="small")
     with row2_left:
         _render_chart_heading("Khoảng Tmin–Tmax và vị trí Tmean")
         st.altair_chart(
@@ -905,7 +959,6 @@ def _render_multi_region(tables: dict[str, pd.DataFrame]) -> None:
             ),
             width="stretch",
         )
-        _render_discrete_legend("Vùng", region_legend_items)
     with row2_right:
         _render_chart_heading("Phân bố nhiệt độ trung bình năm")
         distribution, is_boxplot = _annual_distribution_chart(
@@ -940,29 +993,25 @@ def _render_single_region(tables: dict[str, pd.DataFrame]) -> None:
                 "label": "Điểm nóng nhất trong vùng",
                 "value": hottest["mean_t2m"],
                 "subject": hottest["location_label"],
-                "caption": "T2M trung bình",
             },
             {
                 "label": "Điểm mát nhất trong vùng",
                 "value": coolest["mean_t2m"],
                 "subject": coolest["location_label"],
-                "caption": "T2M trung bình",
             },
             {
                 "label": "Dao động ngày-đêm lớn nhất",
                 "value": largest_range["mean_daily_range"],
                 "subject": largest_range["location_label"],
-                "caption": "Biên độ ngày–đêm TB",
             },
             {
                 "label": "Tính mùa nhiệt độ lớn nhất",
                 "value": largest_seasonality["temperature_seasonality"],
                 "subject": largest_seasonality["location_label"],
-                "caption": "Chênh lệch tháng nóng–mát",
             },
         ]
     )
-    _vertical_space(26)
+    _vertical_space(8)
 
     location_order = (
         location_period.sort_values("mean_t2m", ascending=False)["location_label"].tolist()
@@ -971,12 +1020,12 @@ def _render_single_region(tables: dict[str, pd.DataFrame]) -> None:
         (location, LOCATION_PALETTE[index % len(LOCATION_PALETTE)])
         for index, location in enumerate(location_order)
     ]
-    heatmap_height = min(360, max(300, 32 * len(location_period) + 100))
-    row1_left, row1_right = st.columns([0.9, 1.1], gap="medium")
+    heatmap_height = 310
+    row1_left, row1_right = st.columns([0.9, 1.1], gap="small")
     with row1_left:
         _render_chart_heading("Mức nhiệt và biên độ ngày–đêm")
         st.altair_chart(_location_scatter_chart(metrics), width="stretch")
-        _render_discrete_legend("Điểm tham chiếu", location_legend_items)
+        _render_discrete_legend("Điểm tham chiếu", location_legend_items, boxed=True)
     with row1_right:
         _render_chart_heading("Nhiệt độ theo tháng")
         _warn_if_months_missing(tables["location_month"], "location_id")
@@ -995,14 +1044,15 @@ def _render_single_region(tables: dict[str, pd.DataFrame]) -> None:
     _vertical_space(22)
     dumbbell_height = _dumbbell_height(len(location_period))
     distribution_height = min(420, max(340, 36 * len(location_period) + 100))
-    row2_left, row2_right = st.columns([1.08, 0.92], gap="medium")
+    detail_height = max(dumbbell_height, distribution_height)
+    row2_left, row2_right = st.columns([1.08, 0.92], gap="small")
     with row2_left:
         _render_chart_heading("Khoảng Tmin–Tmax theo địa điểm")
         st.altair_chart(
             _dumbbell_chart(
                 location_period,
                 multi_region=False,
-                height=dumbbell_height,
+                height=detail_height,
             ),
             width="stretch",
         )
@@ -1014,7 +1064,8 @@ def _render_single_region(tables: dict[str, pd.DataFrame]) -> None:
             category_title="Điểm tham chiếu",
             category_order=location_order,
             region_colors=False,
-            height=distribution_height,
+            height=detail_height,
+            show_category_axis_title=False,
         )
         if not is_boxplot:
             st.info("Giai đoạn quá ngắn; hiển thị giá trị trung bình từng năm.")
@@ -1024,7 +1075,6 @@ def _render_single_region(tables: dict[str, pd.DataFrame]) -> None:
 def _render_single_location(tables: dict[str, pd.DataFrame]) -> None:
     location = tables["location_period"].iloc[0]
     location_label = str(location["location_label"])
-    region = str(location["region"])
     seasonality = float(tables["location_seasonality"]["temperature_seasonality"].iloc[0])
 
     _render_kpi_cards(
@@ -1033,31 +1083,27 @@ def _render_single_location(tables: dict[str, pd.DataFrame]) -> None:
                 "label": "Nhiệt độ trung bình",
                 "value": location["mean_t2m"],
                 "subject": location_label,
-                "caption": region,
             },
             {
                 "label": "T2M_MIN trung bình",
                 "value": location["mean_tmin"],
                 "subject": location_label,
-                "caption": "Cực tiểu ngày TB",
             },
             {
                 "label": "T2M_MAX trung bình",
                 "value": location["mean_tmax"],
                 "subject": location_label,
-                "caption": "Cực đại ngày TB",
             },
             {
                 "label": "Dao động ngày-đêm TB",
                 "value": location["mean_daily_range"],
                 "subject": location_label,
-                "caption": "Biên độ ngày–đêm TB",
             },
         ]
     )
-    _vertical_space(26)
+    _vertical_space(8)
 
-    left_col, right_col = st.columns([0.85, 1.15], gap="medium")
+    left_col, right_col = st.columns([0.85, 1.15], gap="small")
     with left_col:
         _render_chart_heading("Chu kỳ nhiệt theo tháng")
         _warn_if_months_missing(tables["location_month"], "location_id")
@@ -1077,7 +1123,7 @@ def _render_single_location(tables: dict[str, pd.DataFrame]) -> None:
         series_legend_items = [("Trung bình năm", PRIMARY)]
         if has_moving_average:
             series_legend_items.append(("TB trượt 5 năm", TEMP_ACCENT))
-        _render_discrete_legend("Chuỗi", series_legend_items)
+        _render_discrete_legend("Chuỗi", series_legend_items, boxed=True)
 
 
 def render_temperature_comparison_tab(
@@ -1113,15 +1159,7 @@ def render_temperature_comparison_tab(
         st.info("Không đủ dữ liệu tổng hợp để hiển thị Tab 2.")
         return
 
-    start_year, end_year = _parse_period(active_filters)
-    n_regions = int(scoped["region"].nunique())
-    n_locations = int(scoped["location_id"].nunique())
     layout = _determine_layout(scoped)
-    location_subset_active = bool(active_filters.get("selected_reference_points", []))
-    scope_caption = f"{start_year}–{end_year} · {n_regions} vùng · {n_locations} điểm"
-    if location_subset_active:
-        scope_caption += " · Chỉ tính trên các điểm đã chọn"
-    st.caption(scope_caption)
 
     try:
         if layout == "multi_region":
