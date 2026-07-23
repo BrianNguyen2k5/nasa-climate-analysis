@@ -6,7 +6,10 @@ import unittest
 import pandas as pd
 
 from ai_assistant.data_context import DATA_PATH, load_dataset
-from ai_assistant.dataset_qa import answer_dataset_question
+from ai_assistant.dataset_qa import (
+    answer_dataset_question,
+    query_dataset_question,
+)
 
 
 METRIC_COLUMNS = {
@@ -191,8 +194,7 @@ class DatasetQARealDataTests(unittest.TestCase):
             ),
         )
 
-    @unittest.expectedFailure
-    def test_05_expected_gap_hottest_region_by_mean_temperature(self) -> None:
+    def test_05_hottest_region_by_mean_temperature(self) -> None:
         ranking = self.df.groupby("region_vn")["T2M"].mean().sort_values(
             ascending=False
         )
@@ -211,29 +213,32 @@ class DatasetQARealDataTests(unittest.TestCase):
         self.assertIn(expected_region, answer)
         self.assertIn(f"{expected_value:.2f}", answer)
 
-    @unittest.expectedFailure
-    def test_06_expected_gap_rainiest_location(self) -> None:
-        ranking = self.df.groupby("location_name")["PRECTOTCORR"].mean().sort_values(
-            ascending=False
+    def test_06_rainiest_location_by_daily_mean_2020_2025(self) -> None:
+        start_year = 2020
+        end_year = 2025
+        subset = self.df[self.df["year"].between(start_year, end_year)]
+        ranking = (
+            subset.groupby("location_name")["PRECTOTCORR"]
+            .mean()
+            .sort_values(ascending=False)
         )
         expected_location = str(ranking.index[0])
         expected_value = float(ranking.iloc[0])
 
         answer = answer_dataset_question(
-            "Địa điểm có lượng mưa trung bình cao nhất là đâu?",
+            (
+                "Địa điểm có lượng mưa trung bình ngày cao nhất "
+                "giai đoạn 2020–2025 là đâu?"
+            ),
             self.df,
         )
 
-        self.assertIsNotNone(
-            answer,
-            "Dataset QA chưa hỗ trợ ranking location theo PRECTOTCORR.mean().",
-        )
+        self.assertIsNotNone(answer)
         self.assertIn(expected_location, answer)
         self.assertIn(f"{expected_value:.2f}", answer)
-        self.assertIn("mm", answer.lower())
+        self.assertIn("mm/ngày", answer.lower())
 
-    @unittest.expectedFailure
-    def test_07_expected_gap_da_nang_humidity_2023(self) -> None:
+    def test_07_da_nang_humidity_2023(self) -> None:
         location = "Da Nang"
         year = 2023
         subset = self.df[
@@ -246,12 +251,32 @@ class DatasetQARealDataTests(unittest.TestCase):
             self.df,
         )
 
-        self.assertIsNotNone(
-            answer,
-            "Dataset QA chưa hỗ trợ RH2M theo location+năm.",
-        )
+        self.assertIsNotNone(answer)
         actual = _extract_number_before_unit(answer, "%")
         self.assertAlmostEqual(actual, round(expected, 2), places=2)
+
+        result = query_dataset_question(
+            "Độ ẩm Đà Nẵng năm 2023 là bao nhiêu?",
+            self.df,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["metric"], "RH2M")
+        self.assertEqual(result["aggregation"], "mean")
+        self.assertEqual(
+            result["filters"],
+            {
+                "start_year": year,
+                "end_year": year,
+                "location_name": location,
+            },
+        )
+        self.assertAlmostEqual(
+            float(result["rows"][0]["value"]),
+            expected,
+            places=9,
+        )
 
     @unittest.expectedFailure
     def test_08_expected_gap_region_with_most_hot_days(self) -> None:
@@ -294,8 +319,7 @@ class DatasetQARealDataTests(unittest.TestCase):
         self.assertIn(expected_location, answer)
         self.assertIn(str(expected_days), answer)
 
-    @unittest.expectedFailure
-    def test_10_expected_gap_compare_ha_noi_and_ho_chi_minh_city_2020_2025(
+    def test_10_compare_ha_noi_and_ho_chi_minh_city_2020_2025(
         self,
     ) -> None:
         locations = ["Ha Noi", "Ho Chi Minh City"]
@@ -310,16 +334,12 @@ class DatasetQARealDataTests(unittest.TestCase):
             self.df,
         )
 
-        self.assertIsNotNone(
-            answer,
-            "Dataset QA chưa hỗ trợ nhiều location và khoảng năm.",
-        )
+        self.assertIsNotNone(answer)
         for location, value in expected.items():
             self.assertIn(str(location), answer)
             self.assertIn(f"{float(value):.2f}", answer)
 
-    @unittest.expectedFailure
-    def test_11_expected_gap_unknown_location_requests_clarification(self) -> None:
+    def test_11_unknown_location_requests_structured_clarification(self) -> None:
         answer = answer_dataset_question(
             "Nhiệt độ trung bình Atlantis năm 2020 là bao nhiêu?",
             self.df,
@@ -335,6 +355,17 @@ class DatasetQARealDataTests(unittest.TestCase):
         )
         self.assertNotRegex(answer, r"\d+(?:[.,]\d+)?\s*°C")
 
+        result = query_dataset_question(
+            "Nhiệt độ trung bình Atlantis năm 2020 là bao nhiêu?",
+            self.df,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertTrue(result["handled"])
+        self.assertEqual(result["status"], "clarification")
+        self.assertTrue(result["clarification_needed"])
+        self.assertEqual(result["rows"], [])
+
     def test_12_year_outside_dataset_range_does_not_fabricate_value(self) -> None:
         outside_year = int(self.df["year"].min()) - 1
 
@@ -348,8 +379,7 @@ class DatasetQARealDataTests(unittest.TestCase):
         self.assertIn("Không có dữ liệu", answer)
         self.assertNotRegex(answer, r"\d+(?:[.,]\d+)?\s*°C")
 
-    @unittest.expectedFailure
-    def test_13_expected_gap_missing_year_requests_clarification(self) -> None:
+    def test_13_missing_year_requests_clarification(self) -> None:
         answer = answer_dataset_question(
             "Nhiệt độ trung bình Hà Nội là bao nhiêu?",
             self.df,
@@ -361,6 +391,48 @@ class DatasetQARealDataTests(unittest.TestCase):
         )
         self.assertRegex(answer.lower(), r"năm|thời gian|vui lòng")
         self.assertNotRegex(answer, r"\d+(?:[.,]\d+)?\s*°C")
+
+    def test_15_total_rainfall_uses_sum_for_explicit_year(self) -> None:
+        location = "Da Nang"
+        year = 2023
+        subset = self.df[
+            self.df["location_name"].eq(location) & self.df["year"].eq(year)
+        ]
+        expected = float(subset["PRECTOTCORR"].sum())
+
+        result = query_dataset_question(
+            "Tổng lượng mưa Đà Nẵng năm 2023 là bao nhiêu?",
+            self.df,
+        )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["metric"], "PRECTOTCORR")
+        self.assertEqual(result["aggregation"], "sum")
+        self.assertEqual(result["unit"], "mm")
+        self.assertAlmostEqual(
+            float(result["rows"][0]["value"]),
+            expected,
+            places=9,
+        )
+
+    def test_16_ambiguous_rainfall_query_requests_clarification(self) -> None:
+        result = query_dataset_question(
+            "Địa điểm có lượng mưa cao nhất là đâu?",
+            self.df,
+        )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["status"], "clarification")
+        self.assertTrue(result["clarification_needed"])
+        self.assertIsNone(result["aggregation"])
+        self.assertEqual(result["rows"], [])
+        self.assertRegex(
+            result["answer"].lower(),
+            r"tổng lượng mưa|lượng mưa trung bình ngày",
+        )
 
     def test_14_accented_and_canonical_names_resolve_to_same_location(self) -> None:
         year = 2020

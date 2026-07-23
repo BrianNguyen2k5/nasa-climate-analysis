@@ -2,22 +2,79 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import asdict, dataclass
+from typing import Any
 
 import pandas as pd
 
 from .constants import OFFICIAL_REGIONS
 
 
-TEMPERATURE_ALIASES = {
-    "nhiet do trung binh": "T2M",
-    "t2m": "T2M",
-    "nhiet do cao nhat": "T2M_MAX",
-    "t2m max": "T2M_MAX",
-    "t2m_max": "T2M_MAX",
-    "nhiet do thap nhat": "T2M_MIN",
-    "t2m min": "T2M_MIN",
-    "t2m_min": "T2M_MIN",
+METRIC_SPECS = {
+    "T2M": {
+        "phrases": ("nhiet do trung binh", "t2m"),
+        "label": "Nhiệt độ trung bình",
+        "unit": "°C",
+        "default_aggregation": "mean",
+    },
+    "T2M_MAX": {
+        "phrases": (
+            "nhiet do cao nhat",
+            "nhiet do toi cao",
+            "t2m max",
+            "t2m_max",
+        ),
+        "label": "Nhiệt độ cực đại trung bình",
+        "unit": "°C",
+        "default_aggregation": "mean",
+    },
+    "T2M_MIN": {
+        "phrases": (
+            "nhiet do thap nhat",
+            "nhiet do toi thap",
+            "t2m min",
+            "t2m_min",
+        ),
+        "label": "Nhiệt độ cực tiểu trung bình",
+        "unit": "°C",
+        "default_aggregation": "mean",
+    },
+    "RH2M": {
+        "phrases": ("do am", "rh2m"),
+        "label": "Độ ẩm trung bình",
+        "unit": "%",
+        "default_aggregation": "mean",
+    },
+    "PRECTOTCORR": {
+        "phrases": ("luong mua", "prectotcorr"),
+        "label": "Lượng mưa",
+        "unit": "mm",
+        "default_aggregation": None,
+    },
 }
+
+EXPLICIT_LOCATION_ALIASES = {
+    "ha noi": "Ha Noi",
+    "tp hcm": "Ho Chi Minh City",
+    "tphcm": "Ho Chi Minh City",
+    "tp ho chi minh": "Ho Chi Minh City",
+    "ho chi minh": "Ho Chi Minh City",
+    "hue": "Hue",
+    "da nang": "Da Nang",
+}
+
+
+@dataclass(frozen=True)
+class ParsedDatasetQuery:
+    metric: str | None
+    aggregation: str | None
+    locations: tuple[str, ...]
+    region: str | None
+    start_year: int | None
+    end_year: int | None
+    intent: str
+    clarification_needed: bool = False
+    clarification_message: str = ""
 
 
 def _normalize(value: object) -> str:
@@ -33,69 +90,406 @@ def _display_number(value: float) -> str:
     return f"{value:.2f}"
 
 
-def _find_year(prompt_norm: str, df: pd.DataFrame) -> int | None:
-    years = [int(match) for match in re.findall(r"\b(19\d{2}|20\d{2})\b", prompt_norm)]
-    if not years or "year" not in df.columns:
-        return None
-    available_years = set(int(year) for year in df["year"].dropna().unique())
-    for year in years:
-        if year in available_years:
-            return year
-    return years[0]
+def _find_year_range(prompt_norm: str) -> tuple[int | None, int | None]:
+    years = [
+        int(match)
+        for match in re.findall(r"\b(19\d{2}|20\d{2})\b", prompt_norm)
+    ]
+    if not years:
+        return None, None
+    return min(years), max(years)
 
 
-def _find_location(prompt_norm: str, df: pd.DataFrame) -> tuple[str, pd.Series] | None:
+def _location_alias_map(df: pd.DataFrame) -> dict[str, str]:
+    aliases: dict[str, str] = {}
     if "location_name" not in df.columns:
-        return None
+        return aliases
 
-    candidates: list[tuple[int, str, pd.Series]] = []
-    location_columns = ["location_name"]
+    for location in df["location_name"].dropna().astype(str).unique():
+        aliases[_normalize(location)] = location
+
     if "location_vn" in df.columns:
-        location_columns.append("location_vn")
+        pairs = df[["location_name", "location_vn"]].dropna().drop_duplicates()
+        for row in pairs.itertuples(index=False):
+            aliases[_normalize(row.location_vn)] = str(row.location_name)
 
-    for column in location_columns:
-        for location in sorted(df[column].dropna().unique(), key=lambda item: len(str(item)), reverse=True):
-            location_norm = _normalize(location)
-            if location_norm and location_norm in prompt_norm:
-                mask = df[column].eq(location)
-                display = str(df.loc[mask, "location_name"].iloc[0])
-                candidates.append((len(location_norm), display, mask))
+    available = set(df["location_name"].dropna().astype(str))
+    for alias, canonical in EXPLICIT_LOCATION_ALIASES.items():
+        if canonical in available:
+            aliases[_normalize(alias)] = canonical
+    return aliases
 
+
+def _find_locations(prompt_norm: str, df: pd.DataFrame) -> tuple[str, ...]:
+    padded_prompt = f" {prompt_norm} "
+    matches: list[tuple[int, int, str]] = []
+    for alias, canonical in _location_alias_map(df).items():
+        token = f" {alias} "
+        position = padded_prompt.find(token)
+        if position >= 0:
+            matches.append((position, -len(alias), canonical))
+
+    locations: list[str] = []
+    for _, _, canonical in sorted(matches):
+        if canonical not in locations:
+            locations.append(canonical)
+    return tuple(locations)
+
+
+def _find_region(prompt_norm: str) -> str | None:
+    for region in OFFICIAL_REGIONS:
+        if f" {_normalize(region)} " in f" {prompt_norm} ":
+            return region
+    return None
+
+
+def _find_metric(prompt_norm: str) -> str | None:
+    candidates: list[tuple[int, str]] = []
+    for metric, spec in METRIC_SPECS.items():
+        for phrase in spec["phrases"]:
+            normalized_phrase = _normalize(phrase)
+            if normalized_phrase in prompt_norm:
+                candidates.append((len(normalized_phrase), metric))
     if not candidates:
         return None
-    _, display, mask = max(candidates, key=lambda item: item[0])
-    return display, mask
+    return max(candidates)[1]
 
 
-def _region_location_answer(df: pd.DataFrame) -> str | None:
+def _rainfall_aggregation(prompt_norm: str) -> str | None:
+    if "tong luong mua" in prompt_norm:
+        return "sum"
+    if (
+        "luong mua trung binh" in prompt_norm
+        or "trung binh ngay" in prompt_norm
+    ):
+        return "mean"
+    return None
+
+
+def _is_highest_query(prompt_norm: str) -> bool:
+    return any(
+        phrase in prompt_norm
+        for phrase in ("cao nhat", "lon nhat", "nhieu nhat")
+    )
+
+
+def _parse_query(prompt_norm: str, df: pd.DataFrame) -> ParsedDatasetQuery | None:
+    metric = _find_metric(prompt_norm)
+    if metric is None:
+        return None
+
+    spec = METRIC_SPECS[metric]
+    aggregation = (
+        _rainfall_aggregation(prompt_norm)
+        if metric == "PRECTOTCORR"
+        else str(spec["default_aggregation"])
+    )
+    locations = _find_locations(prompt_norm, df)
+    region = _find_region(prompt_norm)
+    start_year, end_year = _find_year_range(prompt_norm)
+
+    if "so sanh" in prompt_norm:
+        intent = "compare_locations"
+    elif "vung" in prompt_norm and _is_highest_query(prompt_norm):
+        intent = "rank_regions"
+    elif "dia diem" in prompt_norm and _is_highest_query(prompt_norm):
+        intent = "rank_locations"
+    else:
+        intent = "location_metric"
+
+    clarification = ""
+    if metric == "PRECTOTCORR" and aggregation is None:
+        clarification = (
+            "Vui lòng cho biết cần tổng lượng mưa hay lượng mưa trung bình ngày."
+        )
+        if start_year is None or end_year is None:
+            clarification += " Đồng thời, hãy cung cấp năm hoặc khoảng năm."
+    elif metric == "PRECTOTCORR" and (
+        start_year is None or end_year is None
+    ):
+        clarification = (
+            "Vui lòng cung cấp năm hoặc khoảng năm cho truy vấn lượng mưa; "
+            "Dataset QA không tự dùng toàn bộ giai đoạn."
+        )
+    elif intent == "compare_locations" and len(locations) < 2:
+        clarification = (
+            "Không tìm thấy đủ hai địa điểm để so sánh. "
+            "Vui lòng dùng tên địa điểm canonical hoặc tên tiếng Việt."
+        )
+    elif intent == "location_metric" and not locations:
+        valid_locations = ", ".join(
+            sorted(df["location_name"].dropna().astype(str).unique())
+        )
+        clarification = (
+            "Không tìm thấy địa điểm trong dataset. "
+            f"Vui lòng chọn một trong các location_name: {valid_locations}."
+        )
+    elif intent in {"location_metric", "compare_locations", "rank_locations"} and (
+        start_year is None or end_year is None
+    ):
+        clarification = (
+            "Vui lòng cung cấp năm hoặc khoảng năm cần phân tích; "
+            "Dataset QA không tự chọn năm mặc định."
+        )
+
+    return ParsedDatasetQuery(
+        metric=metric,
+        aggregation=aggregation,
+        locations=locations,
+        region=region,
+        start_year=start_year,
+        end_year=end_year,
+        intent=intent,
+        clarification_needed=bool(clarification),
+        clarification_message=clarification,
+    )
+
+
+def _filters_for_query(query: ParsedDatasetQuery) -> dict[str, Any]:
+    filters: dict[str, Any] = {
+        "start_year": query.start_year,
+        "end_year": query.end_year,
+    }
+    if len(query.locations) == 1:
+        filters["location_name"] = query.locations[0]
+    elif query.locations:
+        filters["location_names"] = list(query.locations)
+    if query.region:
+        filters["region_vn"] = query.region
+    return filters
+
+
+def _structured_result(
+    query: ParsedDatasetQuery,
+    *,
+    status: str,
+    answer: str,
+    rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    spec = METRIC_SPECS.get(query.metric or "", {})
+    unit = str(spec.get("unit", ""))
+    if query.metric == "PRECTOTCORR" and query.aggregation == "mean":
+        unit = "mm/ngày"
+    return {
+        "handled": True,
+        "status": status,
+        "metric": query.metric,
+        "metric_label": spec.get("label"),
+        "unit": unit,
+        "aggregation": query.aggregation,
+        "filters": _filters_for_query(query),
+        "intent": query.intent,
+        "clarification_needed": query.clarification_needed,
+        "parsed_query": asdict(query),
+        "rows": rows or [],
+        "answer": answer,
+    }
+
+
+def _region_location_result(df: pd.DataFrame) -> dict[str, Any] | None:
     if not {"region_vn", "location_vn"}.issubset(df.columns):
         return None
     lines = []
+    rows = []
     for region in OFFICIAL_REGIONS:
         group = df[df["region_vn"].eq(region)]
         if group.empty:
             continue
         locations = sorted(group["location_vn"].dropna().unique().tolist())
+        rows.append({"region_vn": region, "locations": locations})
         lines.append(f"- {region}: {len(locations)} điểm, gồm {', '.join(locations)}")
     total_regions = sum(df["region_vn"].eq(region).any() for region in OFFICIAL_REGIONS)
-    total_locations = df["location_vn"].nunique()
-    return f"Dataset hiện có {total_regions} vùng và {total_locations} điểm tham chiếu:\n" + "\n".join(lines)
+    total_locations = int(df["location_vn"].nunique())
+    answer = (
+        f"Dataset hiện có {total_regions} vùng và {total_locations} điểm tham chiếu:\n"
+        + "\n".join(lines)
+    )
+    return {
+        "handled": True,
+        "status": "ok",
+        "metric": None,
+        "metric_label": None,
+        "unit": "",
+        "aggregation": "count",
+        "filters": {},
+        "intent": "dataset_scope",
+        "clarification_needed": False,
+        "parsed_query": None,
+        "rows": rows,
+        "answer": answer,
+    }
 
 
-def _single_region_location_answer(prompt_norm: str, df: pd.DataFrame) -> str | None:
+def _single_region_location_result(
+    prompt_norm: str,
+    df: pd.DataFrame,
+) -> dict[str, Any] | None:
     if not {"region_vn", "location_vn"}.issubset(df.columns):
         return None
     for region in OFFICIAL_REGIONS:
         if _normalize(region) not in prompt_norm:
             continue
         locations = sorted(
-            df.loc[df["region_vn"].eq(region), "location_vn"].dropna().unique().tolist()
+            df.loc[df["region_vn"].eq(region), "location_vn"]
+            .dropna()
+            .unique()
+            .tolist()
         )
-        return f"{region} có {len(locations)} điểm tham chiếu: {', '.join(locations)}."
+        return {
+            "handled": True,
+            "status": "ok",
+            "metric": None,
+            "metric_label": None,
+            "unit": "",
+            "aggregation": "list",
+            "filters": {"region_vn": region},
+            "intent": "region_locations",
+            "clarification_needed": False,
+            "parsed_query": None,
+            "rows": [{"region_vn": region, "locations": locations}],
+            "answer": (
+                f"{region} có {len(locations)} điểm tham chiếu: "
+                f"{', '.join(locations)}."
+            ),
+        }
     return None
 
 
-def answer_dataset_question(prompt: str, df: pd.DataFrame) -> str | None:
+def _time_subset(df: pd.DataFrame, query: ParsedDatasetQuery) -> pd.DataFrame:
+    subset = df
+    if query.start_year is not None and query.end_year is not None:
+        subset = subset[subset["year"].between(query.start_year, query.end_year)]
+    if query.region is not None:
+        subset = subset[subset["region_vn"].eq(query.region)]
+    return subset
+
+
+def _aggregate(series: pd.Series, aggregation: str) -> float:
+    if aggregation == "sum":
+        return float(series.sum())
+    return float(series.mean())
+
+
+def _period_label(query: ParsedDatasetQuery) -> str:
+    if query.start_year == query.end_year:
+        return f"năm {query.start_year}"
+    return f"giai đoạn {query.start_year}–{query.end_year}"
+
+
+def _single_location_result(
+    query: ParsedDatasetQuery,
+    df: pd.DataFrame,
+) -> dict[str, Any]:
+    assert query.metric is not None
+    assert query.aggregation is not None
+    location = query.locations[0]
+    subset = _time_subset(df, query)
+    subset = subset[subset["location_name"].eq(location)]
+    if subset.empty:
+        answer = (
+            f"Không có dữ liệu {location} trong {_period_label(query)} "
+            "trong dataset hiện tại."
+        )
+        return _structured_result(query, status="no_data", answer=answer)
+
+    value = _aggregate(subset[query.metric], query.aggregation)
+    count = int(subset[query.metric].count())
+    spec = METRIC_SPECS[query.metric]
+    unit = str(spec["unit"])
+    label = str(spec["label"])
+    if query.metric == "PRECTOTCORR":
+        if query.aggregation == "sum":
+            label = "Tổng lượng mưa"
+        else:
+            label = "Lượng mưa trung bình ngày"
+            unit = "mm/ngày"
+    answer = (
+        f"{label} của {location} {_period_label(query)} là "
+        f"{_display_number(value)}{unit} "
+        f"(tính từ {count} bản ghi ngày trong dataset hiện tại)."
+    )
+    rows = [{"location_name": location, "value": value, "count": count}]
+    return _structured_result(query, status="ok", answer=answer, rows=rows)
+
+
+def _ranking_result(
+    query: ParsedDatasetQuery,
+    df: pd.DataFrame,
+) -> dict[str, Any]:
+    assert query.metric is not None
+    assert query.aggregation is not None
+    subset = _time_subset(df, query)
+    group_column = "region_vn" if query.intent == "rank_regions" else "location_name"
+    ranking = (
+        subset.groupby(group_column)[query.metric]
+        .agg(query.aggregation)
+        .sort_values(ascending=False)
+    )
+    if ranking.empty:
+        return _structured_result(
+            query,
+            status="no_data",
+            answer="Không có dữ liệu phù hợp với bộ lọc đã cung cấp.",
+        )
+
+    subject = str(ranking.index[0])
+    value = float(ranking.iloc[0])
+    spec = METRIC_SPECS[query.metric]
+    unit = str(spec["unit"])
+    label = str(spec["label"]).lower()
+    if query.metric == "PRECTOTCORR":
+        if query.aggregation == "sum":
+            label = "tổng lượng mưa"
+        else:
+            label = "lượng mưa trung bình ngày"
+            unit = "mm/ngày"
+    subject_label = "Vùng" if group_column == "region_vn" else "Địa điểm"
+    period = f" {_period_label(query)}" if query.start_year is not None else ""
+    answer = (
+        f"{subject_label} có {label} cao nhất{period} là {subject}, "
+        f"với {_display_number(value)}{unit}."
+    )
+    rows = [
+        {group_column: str(name), "value": float(metric_value)}
+        for name, metric_value in ranking.items()
+    ]
+    return _structured_result(query, status="ok", answer=answer, rows=rows)
+
+
+def _comparison_result(
+    query: ParsedDatasetQuery,
+    df: pd.DataFrame,
+) -> dict[str, Any]:
+    assert query.metric is not None
+    assert query.aggregation is not None
+    subset = _time_subset(df, query)
+    subset = subset[subset["location_name"].isin(query.locations)]
+    grouped = subset.groupby("location_name")[query.metric].agg(query.aggregation)
+    if grouped.empty:
+        return _structured_result(
+            query,
+            status="no_data",
+            answer="Không có dữ liệu phù hợp để so sánh.",
+        )
+
+    spec = METRIC_SPECS[query.metric]
+    unit = str(spec["unit"])
+    label = str(spec["label"]).lower()
+    lines = []
+    rows = []
+    for location in query.locations:
+        if location not in grouped:
+            continue
+        value = float(grouped.loc[location])
+        rows.append({"location_name": location, "value": value})
+        lines.append(f"- {location}: {_display_number(value)}{unit}")
+    answer = (
+        f"So sánh {label} {_period_label(query)}:\n" + "\n".join(lines)
+    )
+    return _structured_result(query, status="ok", answer=answer, rows=rows)
+
+
+def query_dataset_question(prompt: str, df: pd.DataFrame) -> dict[str, Any] | None:
     prompt_norm = _normalize(prompt)
 
     if (
@@ -103,43 +497,33 @@ def answer_dataset_question(prompt: str, df: pd.DataFrame) -> str | None:
         or "cac tinh thanh cua moi vung" in prompt_norm
         or "cac diem cua moi vung" in prompt_norm
     ):
-        return _region_location_answer(df)
+        return _region_location_result(df)
 
     if "dia diem" in prompt_norm or "tinh thanh" in prompt_norm:
-        region_answer = _single_region_location_answer(prompt_norm, df)
-        if region_answer:
-            return region_answer
+        region_result = _single_region_location_result(prompt_norm, df)
+        if region_result:
+            return region_result
 
-    metric_col = None
-    metric_label = None
-    for phrase, column in TEMPERATURE_ALIASES.items():
-        if phrase in prompt_norm:
-            metric_col = column
-            metric_label = phrase
-            break
-
-    if metric_col is None or metric_col not in df.columns:
+    query = _parse_query(prompt_norm, df)
+    if query is None:
         return None
+    if query.clarification_needed:
+        return _structured_result(
+            query,
+            status="clarification",
+            answer=query.clarification_message,
+        )
+    if query.intent == "location_metric":
+        return _single_location_result(query, df)
+    if query.intent in {"rank_regions", "rank_locations"}:
+        return _ranking_result(query, df)
+    if query.intent == "compare_locations":
+        return _comparison_result(query, df)
+    return None
 
-    location_match = _find_location(prompt_norm, df)
-    year = _find_year(prompt_norm, df)
-    if location_match is None or year is None:
+
+def answer_dataset_question(prompt: str, df: pd.DataFrame) -> str | None:
+    result = query_dataset_question(prompt, df)
+    if result is None:
         return None
-
-    location_name, location_mask = location_match
-    subset = df[location_mask & df["year"].eq(year)]
-    if subset.empty:
-        return f"Không có dữ liệu {location_name} trong năm {year} trong dataset hiện tại."
-
-    value = float(subset[metric_col].mean())
-    count = int(subset[metric_col].count())
-    label = {
-        "T2M": "nhiệt độ trung bình",
-        "T2M_MAX": "nhiệt độ cực đại trung bình",
-        "T2M_MIN": "nhiệt độ cực tiểu trung bình",
-    }.get(metric_col, metric_label or metric_col)
-
-    return (
-        f"{label.capitalize()} của {location_name} năm {year} là {_display_number(value)}°C "
-        f"(tính từ {count} bản ghi ngày trong dataset hiện tại)."
-    )
+    return str(result["answer"])
