@@ -13,16 +13,22 @@ class AIConfig:
     groq_primary_model: str
     groq_backup_model: str
     groq_code_model: str
+    gemini_api_key_backup: str | None = None
+    groq_api_key_backup: str | None = None
 
 
 def load_ai_config() -> AIConfig:
     load_dotenv()
     gemini_api_key = os.getenv("GEMINI_API_KEY")
+    gemini_api_key_backup = os.getenv("GEMINI_API_KEY_BACKUP")
     groq_api_key = os.getenv("GROQ_API_KEY")
+    groq_api_key_backup = os.getenv("GROQ_API_KEY_BACKUP")
 
     return AIConfig(
         gemini_api_key=gemini_api_key,
+        gemini_api_key_backup=gemini_api_key_backup,
         groq_api_key=groq_api_key,
+        groq_api_key_backup=groq_api_key_backup,
         gemini_primary_model=os.getenv(
             "GEMINI_PRIMARY_MODEL",
             "gemini-2.5-flash",
@@ -44,4 +50,3 @@ def load_ai_config() -> AIConfig:
             "qwen/qwen3.6-27b",
         ),
     )
-
