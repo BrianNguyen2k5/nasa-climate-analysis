@@ -57,6 +57,17 @@ MODEL_RESPONSE_FIELDS = {
 INVALID_MODEL_RESPONSE_MESSAGE = (
     "Phản hồi từ mô hình không đúng định dạng an toàn. Vui lòng thử lại."
 )
+AI_EDIT_FULL_CODE_CONTRACT = """
+Khi Mode là `Sửa code`, trường `code` phải chứa TOÀN BỘ chương trình Python
+sau khi sửa:
+- Không trả diff hoặc patch.
+- Không chỉ trả đoạn code đã thay đổi.
+- Giữ nguyên các phần source code không liên quan đến yêu cầu sửa.
+- Không dùng `...`, `…`, comment thay code, placeholder, `rest unchanged`,
+  `rest of code`, `same as above` hoặc `phần còn lại giữ nguyên`.
+- Nếu source code tạo biểu đồ, code cuối vẫn phải tạo/gán biến `fig`.
+- Explanation chỉ được đặt trong `answer`, không nhúng vào `code`.
+"""
 _REASONING_BLOCK_RE = re.compile(
     r"<\s*(?P<tag>think|analysis|reasoning|scratchpad)\s*>"
     r".*?"
@@ -383,6 +394,7 @@ Trả về DUY NHẤT một JSON hợp lệ:
   "suggestions": ["gợi ý 1", "gợi ý 2", "gợi ý 3"]
 }
 """
+    edit_contract = AI_EDIT_FULL_CODE_CONTRACT if mode == "Sửa code" else ""
 
     user_content = (
         f"Mode: {mode}\n"
@@ -394,7 +406,10 @@ Trả về DUY NHẤT một JSON hợp lệ:
     )
 
     messages = [
-        {"role": "system", "content": BASE_SYSTEM_PROMPT + json_instruction},
+        {
+            "role": "system",
+            "content": BASE_SYSTEM_PROMPT + json_instruction + edit_contract,
+        },
         {"role": "user", "content": user_content},
     ]
 

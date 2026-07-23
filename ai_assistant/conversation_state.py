@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, MutableMapping
 
+from .code_sanitizer import validate_ai_edit_candidate
+
 
 CODE_PROPOSAL_KIND = "code_proposal"
 PENDING_APPROVAL = "PENDING_APPROVAL"
@@ -210,13 +212,20 @@ def apply_ai_edit_response(
     *,
     edit_instruction: str,
     edit_answer: str,
+    source_code: str | None = None,
 ) -> tuple[dict[str, Any], bool]:
     message = find_message_by_id(messages, message_id)
     if message is None or not is_code_proposal(message):
         raise KeyError(f"Không tìm thấy code proposal: {message_id}")
 
     candidate = str(response_code or "").strip()
-    if not candidate:
+    source = (
+        str(source_code)
+        if source_code is not None
+        else str(message.get("current_code") or "")
+    )
+    validation = validate_ai_edit_candidate(source, candidate)
+    if not validation.valid:
         return message, False
 
     return (

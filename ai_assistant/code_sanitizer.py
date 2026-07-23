@@ -1,8 +1,11 @@
 ﻿from __future__ import annotations
 
+import ast
 import json
 import re
 import textwrap
+import unicodedata
+from dataclasses import dataclass
 
 
 LOCATION_VALUE_ALIASES = {
@@ -17,6 +20,148 @@ LOCATION_VALUE_ALIASES = {
     "Thành phố Hồ Chí Minh": "Ho Chi Minh City",
     "Hồ Chí Minh": "Ho Chi Minh City",
 }
+
+INCOMPLETE_AI_EDIT_MESSAGE = (
+    "AI không trả về mã Python đầy đủ. Code hiện tại được giữ nguyên, "
+    "vui lòng thử lại."
+)
+UNCHANGED_AI_EDIT_MESSAGE = (
+    "AI chưa trả về thay đổi code. Code hiện tại được giữ nguyên."
+)
+
+
+@dataclass(frozen=True)
+class AIEditValidationResult:
+    valid: bool
+    reason: str
+    message: str
+
+
+def _validation_failure(
+    reason: str,
+    message: str = INCOMPLETE_AI_EDIT_MESSAGE,
+) -> AIEditValidationResult:
+    return AIEditValidationResult(False, reason, message)
+
+
+def _normalized_words(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value.casefold())
+    normalized = "".join(
+        character
+        for character in normalized
+        if unicodedata.category(character) != "Mn"
+    )
+    normalized = normalized.replace("đ", "d")
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _contains_placeholder(value: str, tree: ast.AST) -> bool:
+    normalized = _normalized_words(value)
+    placeholder_phrases = (
+        r"\brest\s+unchanged\b",
+        r"\brest\s+of\s+(?:the\s+)?code\b",
+        r"\bsame\s+as\s+above\b",
+        r"\bphan\s+con\s+lai\s+giu\s+nguyen\b",
+        r"\bgiu\s+nguyen\s+phan\s+con\s+lai\b",
+        r"\bcode\s+con\s+lai\b",
+        r"\bplaceholder\b",
+    )
+    if any(re.search(pattern, normalized) for pattern in placeholder_phrases):
+        return True
+    if any(
+        re.fullmatch(r"\s*#\s*(?:\.{3}|…)\s*", line)
+        for line in value.splitlines()
+    ):
+        return True
+    return any(
+        isinstance(node, ast.Constant) and node.value is Ellipsis
+        for node in ast.walk(tree)
+    )
+
+
+def _meaningful_top_level_statements(tree: ast.Module) -> list[ast.stmt]:
+    return [
+        statement
+        for statement in tree.body
+        if not isinstance(statement, ast.Pass)
+        and not (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, (str, type(Ellipsis)))
+        )
+    ]
+
+
+def _assigns_name(tree: ast.AST, name: str) -> bool:
+    return any(
+        isinstance(node, ast.Name)
+        and node.id == name
+        and isinstance(node.ctx, ast.Store)
+        for node in ast.walk(tree)
+    )
+
+
+def validate_ai_edit_candidate(
+    source_code: str,
+    candidate_code: str,
+) -> AIEditValidationResult:
+    """Validate that an AI edit is a complete replacement program."""
+    source = str(source_code or "").strip()
+    candidate = str(candidate_code or "").strip()
+    if not candidate:
+        return _validation_failure("empty")
+    if candidate in {"...", "…"}:
+        return _validation_failure("placeholder")
+
+    try:
+        candidate_tree = ast.parse(candidate)
+    except SyntaxError:
+        return _validation_failure("syntax_invalid")
+
+    from .code_runner import validate_code
+
+    try:
+        validate_code(candidate)
+    except ValueError:
+        return _validation_failure("unsafe_or_invalid")
+
+    if _contains_placeholder(candidate, candidate_tree):
+        return _validation_failure("placeholder")
+    if any(isinstance(node, ast.Pass) for node in ast.walk(candidate_tree)):
+        return _validation_failure("placeholder")
+
+    candidate_statements = _meaningful_top_level_statements(candidate_tree)
+    if not candidate_statements:
+        return _validation_failure("fragment")
+
+    try:
+        source_tree = ast.parse(source)
+    except SyntaxError:
+        source_tree = None
+
+    if source_tree is not None:
+        if ast.dump(source_tree, include_attributes=False) == ast.dump(
+            candidate_tree,
+            include_attributes=False,
+        ):
+            return _validation_failure("unchanged", UNCHANGED_AI_EDIT_MESSAGE)
+
+        if _assigns_name(source_tree, "fig") and not _assigns_name(
+            candidate_tree,
+            "fig",
+        ):
+            return _validation_failure("missing_required_structure")
+
+        source_statements = _meaningful_top_level_statements(source_tree)
+        if len(source_statements) >= 2:
+            minimum_statement_count = max(
+                2,
+                (len(source_statements) * 3 + 4) // 5,
+            )
+            if len(candidate_statements) < minimum_statement_count:
+                return _validation_failure("fragment")
+
+    return AIEditValidationResult(True, "valid", "")
 
 
 def _extract_code_payload(text: str) -> str:

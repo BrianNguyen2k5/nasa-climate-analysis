@@ -8,7 +8,10 @@ from ai_assistant.code_runner import execute_chart_code
 from ai_assistant.chart_summary import summarize_chart
 from ai_assistant.chart_templates import build_chart_code_from_prompt
 from ai_assistant.code_edit_templates import apply_simple_code_edit
-from ai_assistant.code_sanitizer import sanitize_generated_code
+from ai_assistant.code_sanitizer import (
+    sanitize_generated_code,
+    validate_ai_edit_candidate,
+)
 from ai_assistant.config import load_ai_config
 from ai_assistant.conversation_state import (
     FAILED,
@@ -340,7 +343,13 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
     if ask_fix:
         source_code = resolve_ai_edit_source(message, edited_code)
         user_fix = fix_instruction.strip() or "Sửa code để chạy được an toàn, vẫn tạo biến `fig`, không dùng import/file/network."
-        fix_prompt = f"{user_fix}\n\nYêu cầu bắt buộc: code sau khi sửa phải tạo biến `fig`, không dùng import/file/network, không tự tạo dữ liệu giả."
+        fix_prompt = (
+            f"{user_fix}\n\n"
+            "Trả lại toàn bộ chương trình Python sau khi sửa, không trả diff, "
+            "fragment hoặc placeholder. Giữ nguyên mọi phần không liên quan. "
+            "Code cuối phải tạo biến `fig`, không dùng import/file/network "
+            "và không tự tạo dữ liệu giả."
+        )
         with st.spinner("Groq đang sửa code..."):
             response = ask_groq(
                 config,
@@ -352,6 +361,10 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
         fixed_code = sanitize_generated_code(response.code)
         if fixed_code:
             fixed_code = sanitize_generated_code(apply_simple_code_edit(fixed_code, user_fix))
+        validation = validate_ai_edit_candidate(source_code, fixed_code)
+        if not validation.valid:
+            st.warning(validation.message)
+            return
         fixed_answer = response.answer or (
             "Đã sửa code theo yêu cầu. Bạn có thể kiểm tra lại trước khi chạy."
         )
@@ -361,6 +374,7 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
             fixed_code,
             edit_instruction=user_fix,
             edit_answer=fixed_answer,
+            source_code=source_code,
         )
         if not edit_applied:
             st.warning(
