@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 
 from .config import AIConfig
+from .constants import OFFICIAL_REGIONS
 
 
 @dataclass
@@ -16,7 +17,9 @@ class AIResponse:
     chart_title: str = ""
 
 
-BASE_SYSTEM_PROMPT = """
+OFFICIAL_REGIONS_TEXT = ", ".join(OFFICIAL_REGIONS)
+
+BASE_SYSTEM_PROMPT = f"""
 Bạn là trợ lý AI phân tích dữ liệu khí hậu tích hợp trong dashboard Streamlit.
 Quy tắc bắt buộc:
 - Trả lời bằng tiếng Việt, rõ ràng, có số liệu nếu số liệu đến từ dataset/ngữ cảnh được cung cấp.
@@ -26,6 +29,7 @@ Quy tắc bắt buộc:
 - Code phải có comment tiếng Việt giải thích thao tác chính.
 - Không dùng import/from import, open, os, sys, subprocess, network request, đọc/ghi file, eval, exec. Không viết `import plotly.express as px` hoặc `import plotly.graph_objects as go` vì `px` và `go` đã có sẵn.
 - Code sinh ra ở trạng thái chờ duyệt; con người có quyền sửa trước khi thực thi.
+- Sáu vùng chính thức trong phạm vi AI là: {OFFICIAL_REGIONS_TEXT}. Chỉ dùng các tên này trong câu trả lời, bộ lọc và code sinh ra.
 """
 
 
@@ -194,4 +198,3 @@ Quy tắc:
             ],
         )
     return response.text or ""
-

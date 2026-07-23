@@ -63,3 +63,23 @@ def append_message(
     save_sessions(sessions)
     return sessions
 
+
+def save_session_messages(
+    session_id: str,
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    sessions = load_sessions()
+    session = next((item for item in sessions if item.get("id") == session_id), None)
+    if session is None:
+        first_content = next(
+            (str(message.get("content", "")) for message in messages if message.get("content")),
+            "Cuoc hoi thoai AI",
+        )
+        session = create_session(first_content)
+        session["id"] = session_id
+        sessions.insert(0, session)
+
+    session["messages"] = messages
+    session["updated_at"] = _now()
+    save_sessions(sessions)
+    return sessions

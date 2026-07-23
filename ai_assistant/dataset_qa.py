@@ -5,6 +5,8 @@ import unicodedata
 
 import pandas as pd
 
+from .constants import OFFICIAL_REGIONS
+
 
 TEMPERATURE_ALIASES = {
     "nhiet do trung binh": "T2M",
@@ -69,13 +71,28 @@ def _region_location_answer(df: pd.DataFrame) -> str | None:
     if not {"region_vn", "location_vn"}.issubset(df.columns):
         return None
     lines = []
-    grouped = df.groupby("region_vn")
-    for region, group in sorted(grouped, key=lambda item: str(item[0])):
+    for region in OFFICIAL_REGIONS:
+        group = df[df["region_vn"].eq(region)]
+        if group.empty:
+            continue
         locations = sorted(group["location_vn"].dropna().unique().tolist())
         lines.append(f"- {region}: {len(locations)} điểm, gồm {', '.join(locations)}")
-    total_regions = df["region_vn"].nunique()
+    total_regions = sum(df["region_vn"].eq(region).any() for region in OFFICIAL_REGIONS)
     total_locations = df["location_vn"].nunique()
     return f"Dataset hiện có {total_regions} vùng và {total_locations} điểm tham chiếu:\n" + "\n".join(lines)
+
+
+def _single_region_location_answer(prompt_norm: str, df: pd.DataFrame) -> str | None:
+    if not {"region_vn", "location_vn"}.issubset(df.columns):
+        return None
+    for region in OFFICIAL_REGIONS:
+        if _normalize(region) not in prompt_norm:
+            continue
+        locations = sorted(
+            df.loc[df["region_vn"].eq(region), "location_vn"].dropna().unique().tolist()
+        )
+        return f"{region} có {len(locations)} điểm tham chiếu: {', '.join(locations)}."
+    return None
 
 
 def answer_dataset_question(prompt: str, df: pd.DataFrame) -> str | None:
@@ -87,6 +104,11 @@ def answer_dataset_question(prompt: str, df: pd.DataFrame) -> str | None:
         or "cac diem cua moi vung" in prompt_norm
     ):
         return _region_location_answer(df)
+
+    if "dia diem" in prompt_norm or "tinh thanh" in prompt_norm:
+        region_answer = _single_region_location_answer(prompt_norm, df)
+        if region_answer:
+            return region_answer
 
     metric_col = None
     metric_label = None

@@ -10,9 +10,28 @@ from ai_assistant.chart_templates import build_chart_code_from_prompt
 from ai_assistant.code_edit_templates import apply_simple_code_edit
 from ai_assistant.code_sanitizer import sanitize_generated_code
 from ai_assistant.config import load_ai_config
+from ai_assistant.conversation_state import (
+    PENDING_APPROVAL,
+    attach_chart_conclusion,
+    attach_execution_result,
+    code_sha256,
+    create_code_proposal_message,
+    find_message_by_id,
+    is_code_proposal,
+    latest_code_proposal_id,
+    mark_proposal_approved,
+    normalize_messages,
+    reset_ai_transient_state,
+    update_proposal_code,
+)
 from ai_assistant.data_context import dataset_context, load_dataset
 from ai_assistant.dataset_qa import answer_dataset_question
-from ai_assistant.logs import append_message, create_session, load_sessions
+from ai_assistant.logs import (
+    append_message,
+    create_session,
+    load_sessions,
+    save_session_messages,
+)
 from ai_assistant.models import ask_gemini_vision, ask_groq
 
 
@@ -38,75 +57,131 @@ PROMPT_PLACEHOLDERS = {
 }
 
 
+def _persist_active_messages() -> None:
+    save_session_messages(
+        st.session_state.ai_session_id,
+        st.session_state.ai_messages,
+    )
+
+
+def _append_message_object(message: dict) -> dict:
+    st.session_state.ai_messages.append(message)
+    metadata = {
+        key: value
+        for key, value in message.items()
+        if key not in {"role", "content"}
+    }
+    append_message(
+        st.session_state.ai_session_id,
+        str(message.get("role", "assistant")),
+        str(message.get("content", "")),
+        **metadata,
+    )
+    return message
+
+
+def _add_message(role: str, content: str, **metadata) -> dict:
+    message = {
+        "id": str(uuid.uuid4()),
+        "role": role,
+        "kind": "text",
+        "content": content,
+        **metadata,
+    }
+    return _append_message_object(message)
+
+
+def _append_code_proposal(answer: str, code: str, **metadata) -> dict:
+    proposal = create_code_proposal_message(answer, code, **metadata)
+    _append_message_object(proposal)
+    st.session_state.active_proposal_message_id = proposal["id"]
+    return proposal
+
+
+def _load_session_into_state(session: dict) -> None:
+    reset_ai_transient_state(st.session_state)
+    st.session_state.ai_session_id = session["id"]
+    st.session_state.ai_messages = normalize_messages(session.get("messages", []))
+    active_id = latest_code_proposal_id(st.session_state.ai_messages)
+    if active_id:
+        st.session_state.active_proposal_message_id = active_id
 
 
 def _ensure_state() -> None:
+    requested_session_id = st.session_state.pop("ai_requested_session_id", None)
+    if requested_session_id:
+        requested_session = next(
+            (
+                session
+                for session in load_sessions()
+                if session.get("id") == requested_session_id
+            ),
+            None,
+        )
+        if requested_session is not None:
+            _load_session_into_state(requested_session)
+
     if "ai_session_id" not in st.session_state:
         session = create_session("Hoi thoai AI khi hau")
         st.session_state.ai_session_id = session["id"]
         st.session_state.ai_messages = []
-    if "ai_messages" not in st.session_state:
-        sessions = load_sessions()
+    elif "ai_messages" not in st.session_state:
         session = next(
-            (item for item in sessions if item["id"]
-             == st.session_state.ai_session_id),
+            (
+                item
+                for item in load_sessions()
+                if item.get("id") == st.session_state.ai_session_id
+            ),
             None,
         )
-        st.session_state.ai_messages = session.get(
-            "messages", []) if session else []
+        st.session_state.ai_messages = session.get("messages", []) if session else []
+
+    st.session_state.ai_messages = normalize_messages(st.session_state.ai_messages)
+
+    legacy_pending_code = st.session_state.pop("ai_pending_code", "")
+    legacy_pending_answer = st.session_state.pop("ai_pending_answer", "")
+    st.session_state.pop("ai_last_result", None)
+    st.session_state.pop("ai_chart_conclusion", None)
+    st.session_state.pop("ai_code_editor", None)
+    st.session_state.pop("ai_fix_instruction", None)
+    if legacy_pending_code and not latest_code_proposal_id(st.session_state.ai_messages):
+        _append_code_proposal(
+            str(legacy_pending_answer or "Code được chuyển từ phiên làm việc trước."),
+            str(legacy_pending_code),
+            source="legacy_state_migration",
+        )
+
+    active_id = st.session_state.get("active_proposal_message_id")
+    active_message = (
+        find_message_by_id(st.session_state.ai_messages, str(active_id))
+        if active_id
+        else None
+    )
+    if active_message is None or not is_code_proposal(active_message):
+        latest_id = latest_code_proposal_id(st.session_state.ai_messages)
+        if latest_id:
+            st.session_state.active_proposal_message_id = latest_id
+
 
 def _new_chat() -> None:
+    reset_ai_transient_state(st.session_state)
     session = create_session("Hoi thoai AI khi hau")
     st.session_state.ai_session_id = session["id"]
     st.session_state.ai_messages = []
-    st.session_state.pop("ai_pending_code", None)
-    st.session_state.pop("ai_pending_answer", None)
-    st.session_state.pop("ai_last_result", None)
 
-def _add_message(role: str, content: str, **metadata) -> None:
-    st.session_state.ai_messages.append(
-        {"role": role, "content": content, **metadata})
-    append_message(st.session_state.ai_session_id, role, content, **metadata)
+
+def _request_open_chat(session_id: str) -> None:
+    st.session_state.ai_requested_session_id = session_id
+    st.rerun()
 
 
 def _render_ai_response_detail(message: dict, label: str = "Xem câu trả lời") -> None:
     with st.expander(label, expanded=False):
         st.markdown(message.get("content", ""))
-        if message.get("code"):
-            st.code(message["code"], language="python")
         if message.get("status"):
             st.caption(f"Trạng thái: {message['status']}")
 
 
-def _message_matches_active_code(message: dict) -> bool:
-    pending_code = st.session_state.get("ai_pending_code", "")
-    message_code = message.get("code", "")
-    if not pending_code or not message_code or message.get("status"):
-        return False
-    return sanitize_generated_code(message_code).strip() == pending_code.strip()
-
-
-def _render_messages(df, config, context_text: str) -> bool:
-    answer_index = 1
-    rendered_active_code = False
-    active_message_index = None
-    for idx, message in enumerate(st.session_state.ai_messages):
-        if message.get("role") == "assistant" and _message_matches_active_code(message):
-            active_message_index = idx
-
-    for idx, message in enumerate(st.session_state.ai_messages):
-        role = message.get("role")
-        if role == "user":
-            with st.chat_message("user"):
-                st.markdown(message.get("content", ""))
-        else:
-            with st.chat_message("assistant"):
-                _render_ai_response_detail(message, f"Xem câu trả lời AI #{answer_index}")
-                if idx == active_message_index:
-                    _render_code_review(df, config, context_text)
-                    rendered_active_code = True
-                answer_index += 1
-    return rendered_active_code
 def _result_context(result: dict) -> str:
     fig_json = result.get("fig_json") or {}
     layout = fig_json.get("layout", {})
@@ -136,33 +211,107 @@ def _result_context(result: dict) -> str:
     )
 
 
-def _render_code_review(df, config, context_text: str) -> None:
-    pending_code = st.session_state.get("ai_pending_code", "")
-    if not pending_code:
+def _render_proposal_result(message: dict, config, context_text: str) -> None:
+    error = message.get("error")
+    if error:
+        st.error(str(error))
+
+    result = message.get("result")
+    if not isinstance(result, dict) or not result.get("fig_json"):
+        conclusion = message.get("conclusion")
+        if conclusion:
+            st.markdown("#### Kết luận từ AI")
+            st.info(str(conclusion))
         return
 
+    st.markdown("#### Kết quả trực quan")
+    fig = pio.from_json(json.dumps(result["fig_json"]))
+    st.plotly_chart(fig, use_container_width=True)
+    if result.get("table_preview"):
+        with st.expander("Bảng dữ liệu trung gian"):
+            st.dataframe(result["table_preview"], use_container_width=True)
+
+    message_id = str(message["id"])
+    if st.button(
+        "AI kết luận biểu đồ vừa tạo",
+        key=f"ai_conclude_chart_{message_id}",
+        use_container_width=True,
+    ):
+        chart_stats = summarize_chart(result["fig_json"])
+        conclusion_prompt = (
+            "Hãy viết kết luận phân tích biểu đồ bằng tiếng Việt dựa hoàn toàn trên số liệu tóm tắt bên dưới. "
+            "Không tự bịa thêm số liệu. Trình bày ngắn gọn, có nhận xét xu hướng và so sánh chính. "
+            "Ở đoạn cuối bắt buộc có tiêu đề `Kết luận chính:` và 1-2 câu tổng hợp ý nghĩa quan trọng nhất của biểu đồ."
+        )
+        with st.spinner("Groq đang viết kết luận từ số liệu chart..."):
+            response = ask_groq(
+                config,
+                conclusion_prompt,
+                context_text,
+                "Kết luận chart/dataset",
+                extra_context=f"Tóm tắt số liệu biểu đồ:\n{chart_stats}",
+            )
+        conclusion = response.answer or chart_stats
+        attach_chart_conclusion(
+            st.session_state.ai_messages,
+            message_id,
+            conclusion,
+            response.suggestions,
+        )
+        _persist_active_messages()
+
+    conclusion = message.get("conclusion")
+    if conclusion:
+        st.markdown("#### Kết luận từ AI")
+        st.info(str(conclusion))
+
+
+def _render_code_review(message_id: str, df, config, context_text: str) -> None:
+    message = find_message_by_id(st.session_state.ai_messages, message_id)
+    if message is None or not is_code_proposal(message):
+        return
+
+    revision = int(message.get("revision") or 1)
+    editor_key = f"ai_code_editor_{message_id}_{revision}"
+    fix_key = f"ai_fix_instruction_{message_id}_{revision}"
+
     st.markdown("#### Code đang chờ duyệt")
-    st.caption(
-        "Bạn có thể sửa trực tiếp trước khi chạy. Code chỉ chạy khi bấm nút phê duyệt.")
+    st.caption("Bạn có thể sửa trực tiếp trước khi chạy. Code chỉ chạy khi bấm nút phê duyệt.")
     edited_code = st.text_area(
         "Mã Python phân tích local",
-        value=pending_code,
+        value=str(message.get("current_code", "")),
         height=360,
-        key="ai_code_editor",
+        key=editor_key,
     )
 
     fix_instruction = st.text_input(
         "Bạn muốn AI sửa gì trong code này?",
         placeholder="Ví dụ: bỏ import, sửa tên địa điểm, đổi sang biểu đồ đường, thêm nhãn số liệu...",
-        key="ai_fix_instruction",
+        key=fix_key,
     )
+
+    if edited_code != message.get("current_code", ""):
+        message = update_proposal_code(
+            st.session_state.ai_messages,
+            message_id,
+            edited_code,
+        )
+        _persist_active_messages()
 
     col_run, col_fix, col_clear = st.columns([1.1, 1.1, 3])
     with col_run:
-        run_code = st.button("Chấp nhận & chạy",
-                             type="primary", use_container_width=True)
+        run_code = st.button(
+            "Chấp nhận & chạy",
+            key=f"ai_run_code_{message_id}_{revision}",
+            type="primary",
+            use_container_width=True,
+        )
     with col_fix:
-        ask_fix = st.button("Nhờ AI sửa code", use_container_width=True)
+        ask_fix = st.button(
+            "Nhờ AI sửa code",
+            key=f"ai_request_fix_{message_id}_{revision}",
+            use_container_width=True,
+        )
     with col_clear:
         st.caption("Môi trường chạy có sẵn: `df`, `pd`, `np`, `px`, `go`.")
 
@@ -183,73 +332,94 @@ def _render_code_review(df, config, context_text: str) -> None:
         else:
             fixed_code = sanitize_generated_code(apply_simple_code_edit(edited_code, user_fix))
         fixed_code = fixed_code or sanitize_generated_code(edited_code)
-
-        st.session_state.ai_pending_code = fixed_code
-        st.session_state.ai_pending_answer = response.answer or "Đã sửa code theo yêu cầu. Bạn có thể kiểm tra lại trước khi chạy."
-        st.session_state.ai_last_result = None
-        st.session_state.pop("ai_chart_conclusion", None)
-        _add_message("user", user_fix, code=edited_code)
-        _add_message("assistant", st.session_state.ai_pending_answer, code=fixed_code, source="code_fix")
+        fixed_answer = response.answer or (
+            "Đã sửa code theo yêu cầu. Bạn có thể kiểm tra lại trước khi chạy."
+        )
+        update_proposal_code(
+            st.session_state.ai_messages,
+            message_id,
+            fixed_code,
+            edit_instruction=user_fix,
+            edit_answer=fixed_answer,
+            increment_revision=True,
+        )
+        _persist_active_messages()
         st.rerun()
 
     if run_code:
-        with st.spinner("Đang chạy code đã duyệt trên dữ liệu local..."):
-            st.session_state.pop("ai_chart_conclusion", None)
-            approved_code = sanitize_generated_code(edited_code)
-            result = execute_chart_code(approved_code, df)
-
-        _add_message(
-            "assistant",
-            result.message,
-            code=approved_code,
-            status="SUCCESS" if result.ok else "FAILED",
-            result=result.__dict__,
+        approved_code = edited_code
+        approved_message = mark_proposal_approved(
+            st.session_state.ai_messages,
+            message_id,
+            approved_code,
         )
+        _persist_active_messages()
+        code_to_execute = str(approved_message["current_code"])
+        if code_sha256(approved_code) != code_sha256(code_to_execute):
+            raise RuntimeError("Code được duyệt không khớp code chuẩn bị thực thi.")
+
+        with st.spinner("Đang chạy code đã duyệt trên dữ liệu local..."):
+            result = execute_chart_code(code_to_execute, df)
+
+        result_dict = result.__dict__
+        attach_execution_result(
+            st.session_state.ai_messages,
+            message_id,
+            executed_code=code_to_execute,
+            ok=result.ok,
+            result=result_dict if result.ok else None,
+            error=None if result.ok else result.message,
+            chart_metadata={"result_context": _result_context(result_dict)} if result.ok else None,
+        )
+        _persist_active_messages()
         if result.ok:
-            st.session_state.ai_last_result = result.__dict__
             st.success(result.message)
         else:
-            st.session_state.ai_last_result = None
             st.error(result.message)
 
-    result = st.session_state.get("ai_last_result")
-    if result and result.get("fig_json"):
-        st.markdown("#### Kết quả trực quan")
-        fig = pio.from_json(json.dumps(result["fig_json"]))
-        st.plotly_chart(fig, use_container_width=True)
-        if result.get("table_preview"):
-            with st.expander("Bảng dữ liệu trung gian"):
-                st.dataframe(result["table_preview"], use_container_width=True)
+    _render_proposal_result(message, config, context_text)
 
-        if st.button("AI kết luận biểu đồ vừa tạo", use_container_width=True):
-            chart_stats = summarize_chart(result["fig_json"])
-            conclusion_prompt = (
-                "Hãy viết kết luận phân tích biểu đồ bằng tiếng Việt dựa hoàn toàn trên số liệu tóm tắt bên dưới. "
-                "Không tự bịa thêm số liệu. Trình bày ngắn gọn, có nhận xét xu hướng và so sánh chính. "
-                "Ở đoạn cuối bắt buộc có tiêu đề `Kết luận chính:` và 1-2 câu tổng hợp ý nghĩa quan trọng nhất của biểu đồ."
-            )
-            with st.spinner("Groq đang viết kết luận từ số liệu chart..."):
-                response = ask_groq(
-                    config,
-                    conclusion_prompt,
-                    context_text,
-                    "Kết luận chart/dataset",
-                    extra_context=f"Tóm tắt số liệu biểu đồ:\n{chart_stats}",
-                )
-            conclusion = response.answer or chart_stats
-            st.session_state.ai_chart_conclusion = conclusion
-            _add_message("user", "AI kết luận biểu đồ vừa tạo")
-            _add_message(
-                "assistant",
-                conclusion,
-                suggestions=response.suggestions,
-                source="groq_chart_conclusion",
-            )
 
-        chart_conclusion = st.session_state.get("ai_chart_conclusion")
-        if chart_conclusion:
-            st.markdown("#### Kết luận từ AI")
-            st.info(chart_conclusion)
+def _render_code_proposal(message: dict, df, config, context_text: str) -> None:
+    message_id = str(message["id"])
+    st.markdown(str(message.get("answer") or message.get("content") or ""))
+    st.caption(f"Trạng thái: {message.get('status', PENDING_APPROVAL)}")
+
+    edit_history = message.get("edit_history") or []
+    if edit_history and edit_history[-1].get("answer"):
+        st.info(str(edit_history[-1]["answer"]))
+
+    active_id = st.session_state.get("active_proposal_message_id")
+    if active_id == message_id:
+        _render_code_review(message_id, df, config, context_text)
+    else:
+        st.code(str(message.get("current_code") or message.get("code") or ""), language="python")
+        if st.button(
+            "Chỉnh sửa proposal này",
+            key=f"ai_activate_proposal_{message_id}",
+            use_container_width=True,
+        ):
+            st.session_state.active_proposal_message_id = message_id
+            st.rerun()
+        _render_proposal_result(message, config, context_text)
+
+
+def _render_messages(df, config, context_text: str) -> None:
+    answer_index = 1
+    for message in st.session_state.ai_messages:
+        role = message.get("role")
+        if role == "user":
+            with st.chat_message("user"):
+                st.markdown(message.get("content", ""))
+            continue
+
+        with st.chat_message("assistant"):
+            if is_code_proposal(message):
+                _render_code_proposal(message, df, config, context_text)
+            else:
+                _render_ai_response_detail(message, f"Xem câu trả lời AI #{answer_index}")
+            answer_index += 1
+
 
 def _render_history() -> None:
     sessions = [session for session in load_sessions() if session.get("messages")]
@@ -260,13 +430,29 @@ def _render_history() -> None:
     for session in sessions:
         label = f"{session.get('updated_at', '')} - {session.get('title', 'Hoi thoai AI')}"
         with st.expander(label):
+            if st.button(
+                "Mở hội thoại",
+                key=f"ai_open_chat_{session.get('id')}",
+                use_container_width=True,
+            ):
+                _request_open_chat(str(session["id"]))
             answer_index = 1
-            for message in session.get("messages", []):
+            for message in normalize_messages(session.get("messages", [])):
                 if message.get("role") == "user":
                     st.markdown(f"**Người dùng:** {message.get('content', '')}")
+                elif is_code_proposal(message):
+                    st.markdown(f"**AI:** {message.get('answer', message.get('content', ''))}")
+                    st.code(message.get("current_code", ""), language="python")
+                    st.caption(f"Trạng thái: {message.get('status', PENDING_APPROVAL)}")
+                    if message.get("error"):
+                        st.error(str(message["error"]))
+                    if message.get("conclusion"):
+                        st.info(str(message["conclusion"]))
+                    answer_index += 1
                 else:
                     _render_ai_response_detail(message, f"Xem câu trả lời AI #{answer_index}")
                     answer_index += 1
+
 
 def render_ai_assistant_tab(placeholder_box=None) -> None:
     _ensure_state()
@@ -306,10 +492,13 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
             key="ai_prompt_box",
         )
 
-        send = st.button("Gửi yêu cầu cho AI", type="primary",
-                         use_container_width=True)
+        send = st.button(
+            "Gửi yêu cầu cho AI",
+            type="primary",
+            use_container_width=True,
+        )
 
-        rendered_active_code = _render_messages(df, config, context_text)
+        _render_messages(df, config, context_text)
 
         if send and prompt.strip():
             request_id = str(uuid.uuid4())
@@ -318,10 +507,12 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
             if mode == "Thống kê dataset":
                 local_answer = answer_dataset_question(prompt, df)
                 if local_answer:
-                    st.session_state.ai_pending_answer = local_answer
-                    st.session_state.pop("ai_pending_code", None)
-                    st.session_state.pop("ai_last_result", None)
-                    _add_message("assistant", local_answer, code="", source="local_dataset_query", request_id=request_id)
+                    _add_message(
+                        "assistant",
+                        local_answer,
+                        source="local_dataset_query",
+                        request_id=request_id,
+                    )
                     st.rerun()
 
             extra_context = ""
@@ -334,8 +525,24 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
                         prompt,
                     )
                 extra_context = f"Ket qua Gemini Vision tu anh:\n{vision_text}"
-                _add_message("assistant", vision_text,
-                             mode="Gemini Vision", request_id=request_id)
+                _add_message(
+                    "assistant",
+                    vision_text,
+                    mode="Gemini Vision",
+                    request_id=request_id,
+                )
+
+            active_id = st.session_state.get("active_proposal_message_id")
+            active_message = (
+                find_message_by_id(st.session_state.ai_messages, str(active_id))
+                if active_id
+                else None
+            )
+            active_code = (
+                str(active_message.get("current_code", ""))
+                if active_message is not None and is_code_proposal(active_message)
+                else ""
+            )
 
             with st.spinner("Groq đang xử lý yêu cầu..."):
                 response = ask_groq(
@@ -344,41 +551,51 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
                     context_text,
                     mode,
                     extra_context=extra_context,
-                    code_input=st.session_state.get("ai_pending_code", ""),
+                    code_input=active_code,
                 )
 
+            response_source = "groq"
             if mode == "Sinh chart/code" and not response.code:
                 fallback = build_chart_code_from_prompt(prompt, df)
                 if fallback:
                     fallback_answer, fallback_code = fallback
                     response.answer = fallback_answer
                     response.code = fallback_code
+                    response_source = "local_chart_template"
 
-            st.session_state.ai_pending_answer = response.answer
             if response.code:
-                st.session_state.ai_pending_code = sanitize_generated_code(response.code)
-                st.session_state.ai_last_result = None
-                st.session_state.pop("ai_chart_conclusion", None)
-
-            _add_message(
-                "assistant",
-                response.answer,
-                code=response.code,
-                suggestions=response.suggestions,
-                chart_title=response.chart_title,
-                request_id=request_id,
-            )
+                sanitized_code = sanitize_generated_code(response.code)
+                if sanitized_code:
+                    _append_code_proposal(
+                        response.answer or "Code đã được tạo và đang chờ bạn duyệt.",
+                        sanitized_code,
+                        suggestions=response.suggestions,
+                        chart_title=response.chart_title,
+                        request_id=request_id,
+                        source=response_source,
+                    )
+                else:
+                    _add_message(
+                        "assistant",
+                        response.answer or "Code sinh ra không vượt qua kiểm tra an toàn.",
+                        suggestions=response.suggestions,
+                        chart_title=response.chart_title,
+                        request_id=request_id,
+                        source=response_source,
+                    )
+            else:
+                _add_message(
+                    "assistant",
+                    response.answer,
+                    suggestions=response.suggestions,
+                    chart_title=response.chart_title,
+                    request_id=request_id,
+                    source=response_source,
+                )
             st.rerun()
-
-        if not rendered_active_code:
-            _render_code_review(df, config, context_text)
 
     with tab_logs:
         st.markdown("### Lịch sử hội thoại")
         st.caption(
             "Log lưu theo từng đoạn chat, gồm prompt, phản hồi, code, trạng thái chạy và kết quả tóm tắt.")
         _render_history()
-
-
-
-

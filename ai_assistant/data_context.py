@@ -4,47 +4,58 @@ from pathlib import Path
 
 import pandas as pd
 
+from .constants import (
+    LOCATION_TO_REGION,
+    LOCATION_VIETNAMESE,
+    OFFICIAL_REGIONS,
+)
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_PATH = BASE_DIR / "data" / "nasa_power_vietnam_daily_clean.csv"
 
-REGION_VIETNAMESE = {
-    "North West": "Tay Bac",
-    "North East": "Dong Bac",
-    "Red River Delta": "Dong bang song Hong",
-    "North Central": "Bac Trung Bo",
-    "South Central Coast": "Duyen hai Nam Trung Bo",
-    "Central Highlands": "Tay Nguyen",
-}
 
-LOCATION_VIETNAMESE = {
-    "Lai Chau": "Lai Chau",
-    "Sapa": "Sa Pa",
-    "Son La": "Son La",
-    "Ha Giang": "Ha Giang",
-    "Cao Bang": "Cao Bang",
-    "Lang Son": "Lang Son",
-    "Ha Noi": "Ha Noi",
-    "Hai Phong": "Hai Phong",
-    "Ninh Binh": "Ninh Binh",
-    "Thanh Hoa": "Thanh Hoa",
-    "Vinh": "Vinh",
-    "Hue": "Hue",
-    "Da Nang": "Da Nang",
-    "Quy Nhon": "Quy Nhon",
-    "Nha Trang": "Nha Trang",
-    "Da Lat": "Da Lat",
-    "Pleiku": "Pleiku",
-    "Buon Ma Thuot": "Buon Ma Thuot",
-}
+def _validate_dataset_scope(df: pd.DataFrame) -> None:
+    required = {"region", "location_name"}
+    missing_columns = sorted(required - set(df.columns))
+    if missing_columns:
+        raise ValueError("Dataset thiếu cột phạm vi: " + ", ".join(missing_columns))
+
+    actual_regions = set(df["region"].dropna().astype(str).unique())
+    official_regions = set(OFFICIAL_REGIONS)
+    if actual_regions != official_regions:
+        missing = sorted(official_regions - actual_regions)
+        unexpected = sorted(actual_regions - official_regions)
+        raise ValueError(
+            f"Danh sách vùng không khớp cấu hình AI; thiếu={missing}, "
+            f"ngoài cấu hình={unexpected}."
+        )
+
+    pairs = df[["location_name", "region"]].drop_duplicates()
+    actual_locations = set(pairs["location_name"].astype(str))
+    expected_locations = set(LOCATION_TO_REGION)
+    if actual_locations != expected_locations:
+        missing = sorted(expected_locations - actual_locations)
+        unexpected = sorted(actual_locations - expected_locations)
+        raise ValueError(
+            f"Danh sách địa điểm không khớp cấu hình AI; thiếu={missing}, "
+            f"ngoài cấu hình={unexpected}."
+        )
+
+    mismatches = [
+        f"{row.location_name}: {row.region}"
+        for row in pairs.itertuples(index=False)
+        if LOCATION_TO_REGION[str(row.location_name)] != str(row.region)
+    ]
+    if mismatches:
+        raise ValueError("Mapping địa điểm-vùng không khớp dataset: " + "; ".join(mismatches))
 
 
 def load_dataset() -> pd.DataFrame:
     df = pd.read_csv(DATA_PATH, low_memory=False)
-    if "region" in df.columns and "region_vn" not in df.columns:
-        df["region_vn"] = df["region"].map(REGION_VIETNAMESE).fillna(df["region"])
-    if "location_name" in df.columns and "location_vn" not in df.columns:
-        df["location_vn"] = df["location_name"].map(LOCATION_VIETNAMESE).fillna(df["location_name"])
+    _validate_dataset_scope(df)
+    df["region_vn"] = df["region"]
+    df["location_vn"] = df["location_name"].map(LOCATION_VIETNAMESE)
     return df
 
 
@@ -62,12 +73,15 @@ def dataset_context(df: pd.DataFrame) -> str:
         if numeric_cols
         else {}
     )
-    regions = sorted(df["region_vn"].dropna().unique().tolist()) if "region_vn" in df.columns else []
+    present_regions = set(df["region_vn"].dropna().astype(str)) if "region_vn" in df.columns else set()
+    regions = [region for region in OFFICIAL_REGIONS if region in present_regions]
     locations = sorted(df["location_vn"].dropna().unique().tolist()) if "location_vn" in df.columns else []
     if {"region_vn", "location_vn"}.issubset(df.columns):
         region_location_map = {
-            region: sorted(group["location_vn"].dropna().unique().tolist())
-            for region, group in df.groupby("region_vn")
+            region: sorted(
+                df.loc[df["region_vn"].eq(region), "location_vn"].dropna().unique().tolist()
+            )
+            for region in regions
         }
         region_location_counts = {
             region: len(items)
@@ -92,4 +106,3 @@ def dataset_context(df: pd.DataFrame) -> str:
         "Important columns: T2M, T2M_MAX, T2M_MIN, RH2M, PRECTOTCORR, "
         "WS10M, PS, ALLSKY_SFC_SW_DWN, year, month, region_vn, location_vn."
     )
-
