@@ -40,7 +40,12 @@ from ai_assistant.logs import (
     load_sessions,
     save_session_messages,
 )
-from ai_assistant.models import ask_gemini_vision, ask_groq
+from ai_assistant.models import (
+    ask_gemini_vision,
+    ask_groq,
+    sanitize_ai_response,
+    sanitize_model_text,
+)
 
 
 @st.cache_data(show_spinner=False)
@@ -578,13 +583,24 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
                         image_file.name,
                         prompt,
                     )
+                vision_text = sanitize_model_text(vision_text)
+                if not vision_text:
+                    vision_text = (
+                        "Phản hồi Gemini không chứa nội dung an toàn để hiển thị. "
+                        "Vui lòng thử lại."
+                    )
+                if mode == "Kết luận chart/dataset":
+                    _add_message(
+                        "assistant",
+                        vision_text,
+                        mode="Gemini Vision",
+                        source="gemini_vision",
+                        request_id=request_id,
+                    )
+                    request_prompt_reset_on_rerun(st.session_state)
+                    st.rerun()
+
                 extra_context = f"Ket qua Gemini Vision tu anh:\n{vision_text}"
-                _add_message(
-                    "assistant",
-                    vision_text,
-                    mode="Gemini Vision",
-                    request_id=request_id,
-                )
 
             active_id = st.session_state.get("active_proposal_message_id")
             active_message = (
@@ -607,6 +623,7 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
                     extra_context=extra_context,
                     code_input=active_code,
                 )
+            response = sanitize_ai_response(response)
 
             response_source = "groq"
             if mode == "Sinh chart/code" and not response.code:

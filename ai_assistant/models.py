@@ -47,6 +47,26 @@ T = TypeVar("T")
 
 
 OFFICIAL_REGIONS_TEXT = ", ".join(OFFICIAL_REGIONS)
+MODEL_RESPONSE_FIELDS = {
+    "answer",
+    "code",
+    "chart_title",
+    "suggestions",
+    "explanation",
+}
+INVALID_MODEL_RESPONSE_MESSAGE = (
+    "Phản hồi từ mô hình không đúng định dạng an toàn. Vui lòng thử lại."
+)
+_REASONING_BLOCK_RE = re.compile(
+    r"<\s*(?P<tag>think|analysis|reasoning|scratchpad)\s*>"
+    r".*?"
+    r"<\s*/\s*(?P=tag)\s*>",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+_REASONING_TAG_RE = re.compile(
+    r"<\s*/?\s*(?:think|analysis|reasoning|scratchpad)\s*>",
+    flags=re.IGNORECASE,
+)
 
 BASE_SYSTEM_PROMPT = f"""
 Bạn là trợ lý AI phân tích dữ liệu khí hậu tích hợp trong dashboard Streamlit.
@@ -212,14 +232,100 @@ def execute_model_attempts(
     )
 
 
+def sanitize_model_text(text: str) -> str:
+    cleaned = str(text or "")
+    cleaned = _REASONING_BLOCK_RE.sub("", cleaned)
+    if _REASONING_TAG_RE.search(cleaned):
+        return ""
+    return cleaned.strip()
+
+
+def _is_supported_response_schema(data: object) -> bool:
+    if not isinstance(data, dict):
+        return False
+    keys = set(data)
+    if not keys or not keys.issubset(MODEL_RESPONSE_FIELDS):
+        return False
+    if not keys.intersection({"answer", "code"}):
+        return False
+    for field in ("answer", "code", "chart_title", "explanation"):
+        if field in data and not isinstance(data[field], str):
+            return False
+    if "suggestions" in data and not (
+        isinstance(data["suggestions"], list)
+        and all(isinstance(item, str) for item in data["suggestions"])
+    ):
+        return False
+    return True
+
+
 def _extract_json(text: str) -> dict:
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
+        try:
+            candidate, _end = decoder.raw_decode(text[match.start():])
+        except json.JSONDecodeError:
+            continue
+        if _is_supported_response_schema(candidate):
+            return candidate
         return {}
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return {}
+    return {}
+
+
+def sanitize_structured_response_data(data: dict) -> dict:
+    suggestions = [
+        cleaned
+        for item in data.get("suggestions", [])
+        if (cleaned := sanitize_model_text(item))
+    ]
+    return {
+        "answer": sanitize_model_text(data.get("answer", "")),
+        "code": sanitize_model_text(data.get("code", "")),
+        "chart_title": sanitize_model_text(data.get("chart_title", "")),
+        "suggestions": suggestions,
+        "explanation": sanitize_model_text(data.get("explanation", "")),
+    }
+
+
+def sanitize_ai_response(response: AIResponse) -> AIResponse:
+    answer = sanitize_model_text(response.answer)
+    code = sanitize_model_text(response.code)
+    suggestions = [
+        cleaned
+        for item in (response.suggestions or [])
+        if (cleaned := sanitize_model_text(item))
+    ]
+    if not answer and not code:
+        answer = INVALID_MODEL_RESPONSE_MESSAGE
+    return AIResponse(
+        answer=answer,
+        code=code,
+        chart_title=sanitize_model_text(response.chart_title),
+        suggestions=suggestions,
+    )
+
+
+def parse_model_response(text: str) -> AIResponse:
+    sanitized_raw = sanitize_model_text(text)
+    if not sanitized_raw:
+        return AIResponse(answer=INVALID_MODEL_RESPONSE_MESSAGE)
+
+    data = _extract_json(sanitized_raw)
+    if not data:
+        return AIResponse(answer=INVALID_MODEL_RESPONSE_MESSAGE)
+
+    sanitized_data = sanitize_structured_response_data(data)
+    if not sanitized_data["answer"] and not sanitized_data["code"]:
+        return AIResponse(answer=INVALID_MODEL_RESPONSE_MESSAGE)
+
+    return sanitize_ai_response(
+        AIResponse(
+            answer=sanitized_data["answer"],
+            code=sanitized_data["code"],
+            chart_title=sanitized_data["chart_title"],
+            suggestions=sanitized_data["suggestions"],
+        )
+    )
 
 
 def _extract_python_code(text: str) -> str:
@@ -233,7 +339,7 @@ def _extract_python_code(text: str) -> str:
 
 
 def _strip_thinking(text: str) -> str:
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+    return sanitize_model_text(text)
 
 
 def ask_groq(
@@ -324,21 +430,7 @@ Trả về DUY NHẤT một JSON hợp lệ:
         )
 
     text = response.choices[0].message.content or ""
-    data = _extract_json(text)
-
-    if not data:
-        cleaned_text = _strip_thinking(text)
-        code = _extract_python_code(cleaned_text)
-        answer_match = re.search(r'"answer"\s*:\s*"(.*?)"\s*,\s*"code"', cleaned_text, re.DOTALL)
-        answer = answer_match.group(1).strip() if answer_match else cleaned_text
-        return AIResponse(answer=answer, code=code)
-
-    return AIResponse(
-        answer=str(data.get("answer", "")),
-        code=str(data.get("code", "")),
-        chart_title=str(data.get("chart_title", "")),
-        suggestions=data.get("suggestions") if isinstance(data.get("suggestions"), list) else [],
-    )
+    return sanitize_ai_response(parse_model_response(text))
 
 
 def ask_gemini_vision(config: AIConfig, image_bytes: bytes, filename: str, prompt: str) -> str:
@@ -392,4 +484,10 @@ Quy tắc:
             "Không thể xử lý yêu cầu Gemini do lỗi không thể fallback. "
             "Vui lòng kiểm tra đầu vào và thử lại."
         )
-    return response.text or ""
+    sanitized_text = sanitize_model_text(response.text or "")
+    if not sanitized_text:
+        return (
+            "Phản hồi Gemini không chứa nội dung an toàn để hiển thị. "
+            "Vui lòng thử lại."
+        )
+    return sanitized_text
