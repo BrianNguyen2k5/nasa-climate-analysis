@@ -10,6 +10,9 @@ import pandas as pd
 from .constants import OFFICIAL_REGIONS
 
 
+HOT_DAY_THRESHOLD_C = 35.0
+DRY_DAY_THRESHOLD_MM = 1.0
+
 METRIC_SPECS = {
     "T2M": {
         "phrases": ("nhiet do trung binh", "t2m"),
@@ -50,6 +53,18 @@ METRIC_SPECS = {
         "label": "Lượng mưa",
         "unit": "mm",
         "default_aggregation": None,
+    },
+    "HOT_LOCATION_DAY": {
+        "phrases": ("ngay nong",),
+        "label": "Lượt địa điểm-ngày nóng",
+        "unit": "lượt địa điểm-ngày nóng",
+        "default_aggregation": "count_location_days",
+    },
+    "DRY_STREAK": {
+        "phrases": ("chuoi ngay kho",),
+        "label": "Chuỗi ngày khô dài nhất",
+        "unit": "ngày",
+        "default_aggregation": "longest_consecutive_streak",
     },
 }
 
@@ -188,7 +203,11 @@ def _parse_query(prompt_norm: str, df: pd.DataFrame) -> ParsedDatasetQuery | Non
     region = _find_region(prompt_norm)
     start_year, end_year = _find_year_range(prompt_norm)
 
-    if "so sanh" in prompt_norm:
+    if metric == "HOT_LOCATION_DAY":
+        intent = "rank_hot_regions"
+    elif metric == "DRY_STREAK":
+        intent = "longest_dry_streak"
+    elif "so sanh" in prompt_norm:
         intent = "compare_locations"
     elif "vung" in prompt_norm and _is_highest_query(prompt_norm):
         intent = "rank_regions"
@@ -210,6 +229,13 @@ def _parse_query(prompt_norm: str, df: pd.DataFrame) -> ParsedDatasetQuery | Non
         clarification = (
             "Vui lòng cung cấp năm hoặc khoảng năm cho truy vấn lượng mưa; "
             "Dataset QA không tự dùng toàn bộ giai đoạn."
+        )
+    elif metric in {"HOT_LOCATION_DAY", "DRY_STREAK"} and (
+        start_year is None or end_year is None
+    ):
+        clarification = (
+            "Vui lòng cung cấp năm hoặc khoảng năm cho chỉ số dẫn xuất; "
+            "Dataset QA không tự chọn giai đoạn mặc định."
         )
     elif intent == "compare_locations" and len(locations) < 2:
         clarification = (
@@ -265,6 +291,7 @@ def _structured_result(
     status: str,
     answer: str,
     rows: list[dict[str, Any]] | None = None,
+    threshold: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     spec = METRIC_SPECS.get(query.metric or "", {})
     unit = str(spec.get("unit", ""))
@@ -277,6 +304,7 @@ def _structured_result(
         "metric_label": spec.get("label"),
         "unit": unit,
         "aggregation": query.aggregation,
+        "threshold": threshold,
         "filters": _filters_for_query(query),
         "intent": query.intent,
         "clarification_needed": query.clarification_needed,
@@ -489,6 +517,166 @@ def _comparison_result(
     return _structured_result(query, status="ok", answer=answer, rows=rows)
 
 
+def _hot_location_day_result(
+    query: ParsedDatasetQuery,
+    df: pd.DataFrame,
+) -> dict[str, Any]:
+    subset = _time_subset(df, query).copy()
+    threshold = {
+        "column": "T2M_MAX",
+        "operator": ">=",
+        "value": HOT_DAY_THRESHOLD_C,
+        "unit": "°C",
+    }
+    if subset.empty:
+        return _structured_result(
+            query,
+            status="no_data",
+            answer="Không có dữ liệu phù hợp với bộ lọc đã cung cấp.",
+            threshold=threshold,
+        )
+
+    subset["is_hot_location_day"] = subset["T2M_MAX"].ge(
+        HOT_DAY_THRESHOLD_C
+    )
+    ranking = (
+        subset.groupby("region_vn")["is_hot_location_day"]
+        .sum()
+        .astype(int)
+        .sort_values(ascending=False)
+    )
+    if ranking.empty:
+        return _structured_result(
+            query,
+            status="no_data",
+            answer="Không có dữ liệu vùng phù hợp với bộ lọc đã cung cấp.",
+            threshold=threshold,
+        )
+
+    region = str(ranking.index[0])
+    count = int(ranking.iloc[0])
+    answer = (
+        f"Vùng có nhiều lượt địa điểm-ngày nóng nhất {_period_label(query)} "
+        f"là {region}, với {count} lượt. "
+        "Một lượt được tính khi một địa điểm trong một ngày có "
+        f"T2M_MAX ≥ {HOT_DAY_THRESHOLD_C:g}°C; đây không phải số ngày "
+        "lịch duy nhất của toàn vùng."
+    )
+    rows = [
+        {
+            "region_vn": str(region_name),
+            "hot_location_day_count": int(region_count),
+        }
+        for region_name, region_count in ranking.items()
+    ]
+    return _structured_result(
+        query,
+        status="ok",
+        answer=answer,
+        rows=rows,
+        threshold=threshold,
+    )
+
+
+def _longest_dry_streak_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
+    working = df[["location_name", "date", "PRECTOTCORR"]].copy()
+    working["date"] = pd.to_datetime(working["date"], errors="coerce")
+    working = working.dropna(subset=["location_name", "date"]).sort_values(
+        ["location_name", "date"]
+    )
+
+    rows: list[dict[str, Any]] = []
+    for location, group in working.groupby("location_name", sort=True):
+        longest = 0
+        longest_start: pd.Timestamp | None = None
+        longest_end: pd.Timestamp | None = None
+        current = 0
+        current_start: pd.Timestamp | None = None
+        previous_date: pd.Timestamp | None = None
+
+        for row in group[["date", "PRECTOTCORR"]].itertuples(index=False):
+            date = row.date
+            is_dry = bool(row.PRECTOTCORR < DRY_DAY_THRESHOLD_MM)
+            is_consecutive = (
+                previous_date is not None
+                and date - previous_date == pd.Timedelta(days=1)
+            )
+            if is_dry:
+                if current > 0 and is_consecutive:
+                    current += 1
+                else:
+                    current = 1
+                    current_start = date
+                if current > longest:
+                    longest = current
+                    longest_start = current_start
+                    longest_end = date
+            else:
+                current = 0
+                current_start = None
+            previous_date = date
+
+        rows.append(
+            {
+                "location_name": str(location),
+                "longest_streak_days": longest,
+                "start_date": (
+                    longest_start.date().isoformat()
+                    if longest_start is not None
+                    else None
+                ),
+                "end_date": (
+                    longest_end.date().isoformat()
+                    if longest_end is not None
+                    else None
+                ),
+            }
+        )
+
+    return sorted(
+        rows,
+        key=lambda row: (-int(row["longest_streak_days"]), row["location_name"]),
+    )
+
+
+def _longest_dry_streak_result(
+    query: ParsedDatasetQuery,
+    df: pd.DataFrame,
+) -> dict[str, Any]:
+    subset = _time_subset(df, query)
+    threshold = {
+        "column": "PRECTOTCORR",
+        "operator": "<",
+        "value": DRY_DAY_THRESHOLD_MM,
+        "unit": "mm/ngày",
+    }
+    rows = _longest_dry_streak_rows(subset)
+    if not rows or int(rows[0]["longest_streak_days"]) == 0:
+        return _structured_result(
+            query,
+            status="no_data",
+            answer="Không có chuỗi ngày khô phù hợp với bộ lọc đã cung cấp.",
+            rows=rows,
+            threshold=threshold,
+        )
+
+    top = rows[0]
+    answer = (
+        f"Địa điểm có chuỗi ngày khô dài nhất {_period_label(query)} là "
+        f"{top['location_name']}, kéo dài {top['longest_streak_days']} ngày "
+        f"từ {top['start_date']} đến {top['end_date']}. "
+        f"Ngày khô được xác định khi PRECTOTCORR < {DRY_DAY_THRESHOLD_MM:g} "
+        "mm/ngày và chuỗi chỉ nối các ngày lịch liên tiếp."
+    )
+    return _structured_result(
+        query,
+        status="ok",
+        answer=answer,
+        rows=rows,
+        threshold=threshold,
+    )
+
+
 def query_dataset_question(prompt: str, df: pd.DataFrame) -> dict[str, Any] | None:
     prompt_norm = _normalize(prompt)
 
@@ -519,6 +707,10 @@ def query_dataset_question(prompt: str, df: pd.DataFrame) -> dict[str, Any] | No
         return _ranking_result(query, df)
     if query.intent == "compare_locations":
         return _comparison_result(query, df)
+    if query.intent == "rank_hot_regions":
+        return _hot_location_day_result(query, df)
+    if query.intent == "longest_dry_streak":
+        return _longest_dry_streak_result(query, df)
     return None
 
 

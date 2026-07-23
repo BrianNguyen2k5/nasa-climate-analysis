@@ -40,31 +40,46 @@ def _extract_number_before_unit(answer: str, unit: str) -> float:
     return float(match.group(1).replace(",", "."))
 
 
-def _longest_dry_streak_by_location(df: pd.DataFrame) -> pd.Series:
-    streaks: dict[str, int] = {}
+def _longest_dry_streak_by_location(df: pd.DataFrame) -> pd.DataFrame:
+    streaks: dict[str, dict[str, object]] = {}
     ordered = df.sort_values(["location_name", "date"])
 
     for location, group in ordered.groupby("location_name", sort=False):
         longest = 0
+        longest_start: pd.Timestamp | None = None
+        longest_end: pd.Timestamp | None = None
         current = 0
+        current_start: pd.Timestamp | None = None
         previous_date: pd.Timestamp | None = None
 
-        for row in group[["date", "dry_day"]].itertuples(index=False):
+        for row in group[["date", "PRECTOTCORR"]].itertuples(index=False):
             date = row.date
             is_consecutive = (
                 previous_date is not None
                 and date - previous_date == pd.Timedelta(days=1)
             )
-            if int(row.dry_day) == 1:
-                current = current + 1 if is_consecutive else 1
-                longest = max(longest, current)
+            if float(row.PRECTOTCORR) < DRY_DAY_THRESHOLD_MM:
+                if current > 0 and is_consecutive:
+                    current += 1
+                else:
+                    current = 1
+                    current_start = date
+                if current > longest:
+                    longest = current
+                    longest_start = current_start
+                    longest_end = date
             else:
                 current = 0
+                current_start = None
             previous_date = date
 
-        streaks[str(location)] = longest
+        streaks[str(location)] = {
+            "longest_streak_days": longest,
+            "start_date": longest_start.date().isoformat(),
+            "end_date": longest_end.date().isoformat(),
+        }
 
-    return pd.Series(streaks, dtype="int64")
+    return pd.DataFrame.from_dict(streaks, orient="index").sort_index()
 
 
 class DatasetQARealDataTests(unittest.TestCase):
@@ -278,46 +293,149 @@ class DatasetQARealDataTests(unittest.TestCase):
             places=9,
         )
 
-    @unittest.expectedFailure
-    def test_08_expected_gap_region_with_most_hot_days(self) -> None:
-        ranking = self.df.groupby("region_vn")["hot_day"].sum().sort_values(
-            ascending=False
+    def test_08_region_with_most_hot_location_days(self) -> None:
+        start_year = 2020
+        end_year = 2025
+        subset = self.df[self.df["year"].between(start_year, end_year)].copy()
+        subset["expected_hot_location_day"] = subset["T2M_MAX"].ge(
+            HOT_DAY_THRESHOLD_C
+        )
+        ranking = (
+            subset.groupby("region_vn")["expected_hot_location_day"]
+            .sum()
+            .astype(int)
+            .sort_values(ascending=False)
         )
         expected_region = str(ranking.index[0])
         expected_count = int(ranking.iloc[0])
 
         answer = answer_dataset_question(
-            "Vùng có nhiều ngày nóng nhất là vùng nào?",
+            "Vùng có nhiều ngày nóng nhất giai đoạn 2020–2025 là vùng nào?",
             self.df,
         )
 
-        self.assertIsNotNone(
-            answer,
-            "Dataset QA chưa hỗ trợ tổng hot_day theo region_vn.",
-        )
+        self.assertIsNotNone(answer)
         self.assertIn(expected_region, answer)
         self.assertIn(str(expected_count), answer)
+        self.assertIn("lượt địa điểm-ngày nóng", answer)
 
-    @unittest.expectedFailure
-    def test_09_expected_gap_location_with_longest_dry_streak(self) -> None:
-        streaks = _longest_dry_streak_by_location(self.df)
-        expected_location = str(streaks.idxmax())
-        expected_days = int(streaks.max())
+        result = query_dataset_question(
+            "Vùng có nhiều ngày nóng nhất giai đoạn 2020–2025 là vùng nào?",
+            self.df,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["metric"], "HOT_LOCATION_DAY")
+        self.assertEqual(result["aggregation"], "count_location_days")
+        self.assertEqual(result["unit"], "lượt địa điểm-ngày nóng")
+        self.assertEqual(
+            result["threshold"],
+            {
+                "column": "T2M_MAX",
+                "operator": ">=",
+                "value": HOT_DAY_THRESHOLD_C,
+                "unit": "°C",
+            },
+        )
+        self.assertEqual(
+            result["filters"],
+            {"start_year": start_year, "end_year": end_year},
+        )
+        self.assertEqual(result["rows"][0]["region_vn"], expected_region)
+        self.assertEqual(
+            result["rows"][0]["hot_location_day_count"],
+            expected_count,
+        )
+
+    def test_09_location_with_longest_dry_streak(self) -> None:
+        start_year = 2020
+        end_year = 2025
+        subset = self.df[self.df["year"].between(start_year, end_year)]
+        streaks = _longest_dry_streak_by_location(subset)
+        ordered = (
+            streaks.reset_index(names="location_name")
+            .sort_values(
+                ["longest_streak_days", "location_name"],
+                ascending=[False, True],
+            )
+            .reset_index(drop=True)
+        )
+        expected = ordered.iloc[0]
+        expected_location = str(expected["location_name"])
+        expected_days = int(expected["longest_streak_days"])
+        expected_start = str(expected["start_date"])
+        expected_end = str(expected["end_date"])
 
         answer = answer_dataset_question(
-            "Địa điểm có chuỗi ngày khô dài nhất là đâu?",
+            (
+                "Địa điểm có chuỗi ngày khô dài nhất "
+                "giai đoạn 2020–2025 là đâu?"
+            ),
             self.df,
         )
 
-        self.assertIsNotNone(
-            answer,
-            (
-                "Dataset QA chưa hỗ trợ chuỗi dry_day liên tục theo location; "
-                f"expected={expected_location}, {expected_days} ngày."
-            ),
-        )
+        self.assertIsNotNone(answer)
         self.assertIn(expected_location, answer)
-        self.assertIn(str(expected_days), answer)
+        self.assertIn(f"{expected_days} ngày", answer)
+        self.assertIn(expected_start, answer)
+        self.assertIn(expected_end, answer)
+
+        result = query_dataset_question(
+            (
+                "Địa điểm có chuỗi ngày khô dài nhất "
+                "giai đoạn 2020–2025 là đâu?"
+            ),
+            self.df,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["metric"], "DRY_STREAK")
+        self.assertEqual(
+            result["aggregation"],
+            "longest_consecutive_streak",
+        )
+        self.assertEqual(result["unit"], "ngày")
+        self.assertEqual(
+            result["threshold"],
+            {
+                "column": "PRECTOTCORR",
+                "operator": "<",
+                "value": DRY_DAY_THRESHOLD_MM,
+                "unit": "mm/ngày",
+            },
+        )
+        self.assertEqual(
+            result["filters"],
+            {"start_year": start_year, "end_year": end_year},
+        )
+        self.assertEqual(result["rows"][0]["location_name"], expected_location)
+        self.assertEqual(
+            result["rows"][0]["longest_streak_days"],
+            expected_days,
+        )
+        self.assertEqual(result["rows"][0]["start_date"], expected_start)
+        self.assertEqual(result["rows"][0]["end_date"], expected_end)
+
+    def test_09b_derived_metrics_require_explicit_time(self) -> None:
+        prompts = (
+            "Vùng có nhiều ngày nóng nhất là vùng nào?",
+            "Địa điểm có chuỗi ngày khô dài nhất là đâu?",
+        )
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                result = query_dataset_question(prompt, self.df)
+                self.assertIsNotNone(result)
+                assert result is not None
+                self.assertEqual(result["status"], "clarification")
+                self.assertTrue(result["clarification_needed"])
+                self.assertEqual(
+                    result["filters"],
+                    {"start_year": None, "end_year": None},
+                )
+                self.assertEqual(result["rows"], [])
 
     def test_10_compare_ha_noi_and_ho_chi_minh_city_2020_2025(
         self,
