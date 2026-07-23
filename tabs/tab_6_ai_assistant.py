@@ -11,7 +11,12 @@ from ai_assistant.code_edit_templates import apply_simple_code_edit
 from ai_assistant.code_sanitizer import sanitize_generated_code
 from ai_assistant.config import load_ai_config
 from ai_assistant.conversation_state import (
+    FAILED,
     PENDING_APPROVAL,
+    PROMPT_WIDGET_KEY,
+    SUCCESS,
+    apply_ai_edit_response,
+    apply_pending_prompt_reset,
     attach_chart_conclusion,
     attach_execution_result,
     code_sha256,
@@ -21,7 +26,10 @@ from ai_assistant.conversation_state import (
     latest_code_proposal_id,
     mark_proposal_approved,
     normalize_messages,
+    proposal_ui_policy,
+    request_prompt_reset_on_rerun,
     reset_ai_transient_state,
+    resolve_ai_edit_source,
     update_proposal_code,
 )
 from ai_assistant.data_context import dataset_context, load_dataset
@@ -108,6 +116,7 @@ def _load_session_into_state(session: dict) -> None:
 
 
 def _ensure_state() -> None:
+    apply_pending_prompt_reset(st.session_state)
     requested_session_id = st.session_state.pop("ai_requested_session_id", None)
     if requested_session_id:
         requested_session = next(
@@ -212,11 +221,19 @@ def _result_context(result: dict) -> str:
 
 
 def _render_proposal_result(message: dict, config, context_text: str) -> None:
+    result = message.get("result")
+    if message.get("status") == SUCCESS:
+        success_message = (
+            result.get("message")
+            if isinstance(result, dict) and result.get("message")
+            else "Thực thi thành công trên dữ liệu local."
+        )
+        st.success(str(success_message))
+
     error = message.get("error")
     if error:
         st.error(str(error))
 
-    result = message.get("result")
     if not isinstance(result, dict) or not result.get("fig_json"):
         conclusion = message.get("conclusion")
         if conclusion:
@@ -228,8 +245,8 @@ def _render_proposal_result(message: dict, config, context_text: str) -> None:
     fig = pio.from_json(json.dumps(result["fig_json"]))
     st.plotly_chart(fig, use_container_width=True)
     if result.get("table_preview"):
-        with st.expander("Bảng dữ liệu trung gian"):
-            st.dataframe(result["table_preview"], use_container_width=True)
+        st.markdown("#### Bảng dữ liệu trung gian")
+        st.dataframe(result["table_preview"], use_container_width=True)
 
     message_id = str(message["id"])
     if st.button(
@@ -290,14 +307,6 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
         key=fix_key,
     )
 
-    if edited_code != message.get("current_code", ""):
-        message = update_proposal_code(
-            st.session_state.ai_messages,
-            message_id,
-            edited_code,
-        )
-        _persist_active_messages()
-
     col_run, col_fix, col_clear = st.columns([1.1, 1.1, 3])
     with col_run:
         run_code = st.button(
@@ -315,7 +324,16 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
     with col_clear:
         st.caption("Môi trường chạy có sẵn: `df`, `pd`, `np`, `px`, `go`.")
 
+    if edited_code != message.get("current_code", "") and not ask_fix:
+        message = update_proposal_code(
+            st.session_state.ai_messages,
+            message_id,
+            edited_code,
+        )
+        _persist_active_messages()
+
     if ask_fix:
+        source_code = resolve_ai_edit_source(message, edited_code)
         user_fix = fix_instruction.strip() or "Sửa code để chạy được an toàn, vẫn tạo biến `fig`, không dùng import/file/network."
         fix_prompt = f"{user_fix}\n\nYêu cầu bắt buộc: code sau khi sửa phải tạo biến `fig`, không dùng import/file/network, không tự tạo dữ liệu giả."
         with st.spinner("Groq đang sửa code..."):
@@ -324,25 +342,27 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
                 fix_prompt,
                 context_text,
                 "Sửa code",
-                code_input=edited_code,
+                code_input=source_code,
             )
         fixed_code = sanitize_generated_code(response.code)
         if fixed_code:
             fixed_code = sanitize_generated_code(apply_simple_code_edit(fixed_code, user_fix))
-        else:
-            fixed_code = sanitize_generated_code(apply_simple_code_edit(edited_code, user_fix))
-        fixed_code = fixed_code or sanitize_generated_code(edited_code)
         fixed_answer = response.answer or (
             "Đã sửa code theo yêu cầu. Bạn có thể kiểm tra lại trước khi chạy."
         )
-        update_proposal_code(
+        _, edit_applied = apply_ai_edit_response(
             st.session_state.ai_messages,
             message_id,
             fixed_code,
             edit_instruction=user_fix,
             edit_answer=fixed_answer,
-            increment_revision=True,
         )
+        if not edit_applied:
+            st.warning(
+                "AI chưa trả về mã Python để cập nhật. "
+                "Nội dung trong editor được giữ nguyên."
+            )
+            return
         _persist_active_messages()
         st.rerun()
 
@@ -372,39 +392,65 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
             chart_metadata={"result_context": _result_context(result_dict)} if result.ok else None,
         )
         _persist_active_messages()
-        if result.ok:
-            st.success(result.message)
-        else:
-            st.error(result.message)
-
-    _render_proposal_result(message, config, context_text)
+        st.rerun()
 
 
-def _render_code_proposal(message: dict, df, config, context_text: str) -> None:
+def _render_code_proposal(
+    message: dict,
+    proposal_number: int,
+    latest_success_id: str | None,
+    df,
+    config,
+    context_text: str,
+) -> None:
     message_id = str(message["id"])
-    st.markdown(str(message.get("answer") or message.get("content") or ""))
-    st.caption(f"Trạng thái: {message.get('status', PENDING_APPROVAL)}")
+    status = str(message.get("status") or PENDING_APPROVAL)
+    policy = proposal_ui_policy(status)
+    expanded = bool(policy["expanded"])
+    if status == SUCCESS and message_id == latest_success_id:
+        expanded = True
+    label = f"{policy['label_prefix']} #{proposal_number} · {status}"
 
-    edit_history = message.get("edit_history") or []
-    if edit_history and edit_history[-1].get("answer"):
-        st.info(str(edit_history[-1]["answer"]))
+    with st.expander(label, expanded=expanded):
+        st.markdown(str(message.get("answer") or message.get("content") or ""))
+        st.caption(f"Trạng thái: {status}")
 
-    active_id = st.session_state.get("active_proposal_message_id")
-    if active_id == message_id:
-        _render_code_review(message_id, df, config, context_text)
-    else:
-        st.code(str(message.get("current_code") or message.get("code") or ""), language="python")
-        if st.button(
-            "Chỉnh sửa proposal này",
-            key=f"ai_activate_proposal_{message_id}",
-            use_container_width=True,
+        edit_history = message.get("edit_history") or []
+        if (
+            policy["show_edit_explanation"]
+            and edit_history
+            and edit_history[-1].get("answer")
         ):
-            st.session_state.active_proposal_message_id = message_id
-            st.rerun()
-        _render_proposal_result(message, config, context_text)
+            st.info(str(edit_history[-1]["answer"]))
+
+        if status == SUCCESS:
+            _render_proposal_result(message, config, context_text)
+            st.markdown("#### Code đã thực thi")
+            st.code(
+                str(message.get("executed_code") or message.get("current_code") or ""),
+                language="python",
+            )
+        elif status == FAILED:
+            _render_proposal_result(message, config, context_text)
+            _render_code_review(message_id, df, config, context_text)
+        elif policy["show_editor"]:
+            _render_code_review(message_id, df, config, context_text)
+        else:
+            st.code(
+                str(message.get("current_code") or message.get("code") or ""),
+                language="python",
+            )
 
 
 def _render_messages(df, config, context_text: str) -> None:
+    latest_success_id = next(
+        (
+            str(message["id"])
+            for message in reversed(st.session_state.ai_messages)
+            if is_code_proposal(message) and message.get("status") == SUCCESS
+        ),
+        None,
+    )
     answer_index = 1
     for message in st.session_state.ai_messages:
         role = message.get("role")
@@ -415,7 +461,14 @@ def _render_messages(df, config, context_text: str) -> None:
 
         with st.chat_message("assistant"):
             if is_code_proposal(message):
-                _render_code_proposal(message, df, config, context_text)
+                _render_code_proposal(
+                    message,
+                    answer_index,
+                    latest_success_id,
+                    df,
+                    config,
+                    context_text,
+                )
             else:
                 _render_ai_response_detail(message, f"Xem câu trả lời AI #{answer_index}")
             answer_index += 1
@@ -486,10 +539,10 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
 
         prompt = st.text_area(
             "Yêu cầu của bạn",
-            value=st.session_state.get("ai_prompt_box", ""),
+            value=st.session_state.get(PROMPT_WIDGET_KEY, ""),
             height=120,
             placeholder=PROMPT_PLACEHOLDERS.get(mode, "Nhập yêu cầu phân tích khí hậu..."),
-            key="ai_prompt_box",
+            key=PROMPT_WIDGET_KEY,
         )
 
         send = st.button(
@@ -513,6 +566,7 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
                         source="local_dataset_query",
                         request_id=request_id,
                     )
+                    request_prompt_reset_on_rerun(st.session_state)
                     st.rerun()
 
             extra_context = ""
@@ -592,6 +646,7 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
                     request_id=request_id,
                     source=response_source,
                 )
+            request_prompt_reset_on_rerun(st.session_state)
             st.rerun()
 
     with tab_logs:

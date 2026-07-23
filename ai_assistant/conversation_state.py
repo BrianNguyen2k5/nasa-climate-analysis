@@ -12,6 +12,8 @@ PENDING_APPROVAL = "PENDING_APPROVAL"
 APPROVED_AND_EXECUTING = "APPROVED_AND_EXECUTING"
 SUCCESS = "SUCCESS"
 FAILED = "FAILED"
+PROMPT_WIDGET_KEY = "ai_prompt_box"
+PROMPT_RESET_PENDING_KEY = "ai_prompt_reset_pending"
 
 TRANSIENT_KEYS = {
     "ai_pending_code",
@@ -20,7 +22,8 @@ TRANSIENT_KEYS = {
     "ai_chart_conclusion",
     "ai_code_editor",
     "ai_fix_instruction",
-    "ai_prompt_box",
+    PROMPT_WIDGET_KEY,
+    PROMPT_RESET_PENDING_KEY,
     "active_proposal_message_id",
     "ai_requested_session_id",
 }
@@ -67,6 +70,7 @@ def create_code_proposal_message(
         "timestamp": created_at,
         "approved_at": None,
         "approved_code_hash": None,
+        "executed_code": None,
         "executed_code_hash": None,
         "edit_history": [],
     }
@@ -119,6 +123,8 @@ def normalize_message(message: dict[str, Any], index: int = 0) -> dict[str, Any]
             "chart_metadata": normalized.get("chart_metadata"),
             "approved_at": normalized.get("approved_at"),
             "approved_code_hash": normalized.get("approved_code_hash"),
+            "executed_code": normalized.get("executed_code")
+            or (code if status == SUCCESS else None),
             "executed_code_hash": normalized.get("executed_code_hash"),
             "edit_history": list(normalized.get("edit_history") or []),
         }
@@ -170,6 +176,7 @@ def update_proposal_code(
     message["chart_metadata"] = None
     message["approved_at"] = None
     message["approved_code_hash"] = None
+    message["executed_code"] = None
     message["executed_code_hash"] = None
     if increment_revision:
         message["revision"] = int(message.get("revision") or 1) + 1
@@ -185,6 +192,44 @@ def update_proposal_code(
         )
         message["edit_history"] = history
     return message
+
+
+def resolve_ai_edit_source(
+    message: dict[str, Any],
+    editor_code: str,
+) -> str:
+    if not is_code_proposal(message):
+        raise ValueError("AI edit source phải thuộc một code proposal.")
+    return str(editor_code)
+
+
+def apply_ai_edit_response(
+    messages: list[dict[str, Any]],
+    message_id: str,
+    response_code: str,
+    *,
+    edit_instruction: str,
+    edit_answer: str,
+) -> tuple[dict[str, Any], bool]:
+    message = find_message_by_id(messages, message_id)
+    if message is None or not is_code_proposal(message):
+        raise KeyError(f"Không tìm thấy code proposal: {message_id}")
+
+    candidate = str(response_code or "").strip()
+    if not candidate:
+        return message, False
+
+    return (
+        update_proposal_code(
+            messages,
+            message_id,
+            candidate,
+            edit_instruction=edit_instruction,
+            edit_answer=edit_answer,
+            increment_revision=True,
+        ),
+        True,
+    )
 
 
 def mark_proposal_approved(
@@ -217,6 +262,7 @@ def attach_execution_result(
     if message.get("approved_code_hash") != executed_hash:
         raise ValueError("Code được thực thi không khớp code đã duyệt.")
 
+    message["executed_code"] = executed_code
     message["executed_code_hash"] = executed_hash
     message["status"] = SUCCESS if ok else FAILED
     message["result"] = result if ok else None
@@ -239,8 +285,41 @@ def attach_chart_conclusion(
     return message
 
 
+def proposal_ui_policy(status: str) -> dict[str, Any]:
+    if status == SUCCESS:
+        return {
+            "label_prefix": "Xem kết quả code",
+            "expanded": False,
+            "show_editor": False,
+            "show_edit_explanation": False,
+        }
+    if status == FAILED:
+        return {
+            "label_prefix": "Xem lỗi code",
+            "expanded": True,
+            "show_editor": True,
+            "show_edit_explanation": True,
+        }
+    return {
+        "label_prefix": "Xem câu trả lời AI",
+        "expanded": True,
+        "show_editor": True,
+        "show_edit_explanation": True,
+    }
+
+
+def request_prompt_reset_on_rerun(state: MutableMapping[str, Any]) -> None:
+    state[PROMPT_RESET_PENDING_KEY] = True
+
+
+def apply_pending_prompt_reset(state: MutableMapping[str, Any]) -> bool:
+    if not state.pop(PROMPT_RESET_PENDING_KEY, False):
+        return False
+    state[PROMPT_WIDGET_KEY] = ""
+    return True
+
+
 def reset_ai_transient_state(state: MutableMapping[str, Any]) -> None:
     for key in list(state):
         if key in TRANSIENT_KEYS or key.startswith(TRANSIENT_KEY_PREFIXES):
             state.pop(key, None)
-

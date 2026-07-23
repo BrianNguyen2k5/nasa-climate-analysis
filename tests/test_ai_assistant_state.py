@@ -1,18 +1,27 @@
 from __future__ import annotations
 
+import copy
 import unittest
 
 from ai_assistant import constants, data_context, dataset_qa
 from ai_assistant.conversation_state import (
     APPROVED_AND_EXECUTING,
+    FAILED,
     PENDING_APPROVAL,
+    PROMPT_WIDGET_KEY,
     SUCCESS,
+    apply_ai_edit_response,
+    apply_pending_prompt_reset,
     attach_execution_result,
     code_sha256,
     create_code_proposal_message,
     mark_proposal_approved,
     normalize_message,
+    normalize_messages,
+    proposal_ui_policy,
+    request_prompt_reset_on_rerun,
     reset_ai_transient_state,
+    resolve_ai_edit_source,
     update_proposal_code,
 )
 
@@ -200,7 +209,170 @@ class AIAssistantStateTests(unittest.TestCase):
         self.assertIn("TP. Hồ Chí Minh", region_answer or "")
         self.assertIn("Vũng Tàu", region_answer or "")
 
+    def test_08_prompt_reset_is_deferred_and_preserves_timeline(self) -> None:
+        history = [
+            {"role": "user", "content": "keep"},
+            create_code_proposal_message("A", "fig = code_a"),
+        ]
+        state = {
+            PROMPT_WIDGET_KEY: "Yêu cầu vừa gửi",
+            "ai_messages": history,
+        }
+
+        request_prompt_reset_on_rerun(state)
+
+        self.assertEqual(state[PROMPT_WIDGET_KEY], "Yêu cầu vừa gửi")
+        self.assertTrue(apply_pending_prompt_reset(state))
+        self.assertEqual(state[PROMPT_WIDGET_KEY], "")
+        self.assertEqual(state["ai_messages"], history)
+
+        state[PROMPT_WIDGET_KEY] = "Giữ lại khi request lỗi"
+        self.assertFalse(apply_pending_prompt_reset(state))
+        self.assertEqual(state[PROMPT_WIDGET_KEY], "Giữ lại khi request lỗi")
+
+    def test_09_failed_execution_and_rerun_keep_proposals_independent(self) -> None:
+        proposal_a = create_code_proposal_message("A", "fig = code_a")
+        proposal_b = create_code_proposal_message("B", "fig = code_b")
+        messages = [proposal_a, proposal_b]
+        mark_proposal_approved(messages, proposal_b["id"], "fig = code_b")
+
+        attach_execution_result(
+            messages,
+            proposal_b["id"],
+            executed_code="fig = code_b",
+            ok=False,
+            result={"must_not_be_kept": True},
+            error="Lỗi thực thi",
+        )
+
+        self.assertEqual(proposal_a["status"], PENDING_APPROVAL)
+        self.assertIsNone(proposal_a["result"])
+        self.assertIsNone(proposal_a["error"])
+        self.assertEqual(proposal_b["status"], FAILED)
+        self.assertIsNone(proposal_b["result"])
+        self.assertEqual(proposal_b["error"], "Lỗi thực thi")
+        self.assertEqual(proposal_b["executed_code"], "fig = code_b")
+
+        rerun_messages = normalize_messages(messages)
+        self.assertEqual(len(rerun_messages), 2)
+        self.assertEqual(
+            [message["id"] for message in rerun_messages],
+            [proposal_a["id"], proposal_b["id"]],
+        )
+
+    def test_10_proposal_ui_policy_matches_status(self) -> None:
+        pending = proposal_ui_policy(PENDING_APPROVAL)
+        failed = proposal_ui_policy(FAILED)
+        success = proposal_ui_policy(SUCCESS)
+
+        self.assertTrue(pending["expanded"])
+        self.assertTrue(pending["show_editor"])
+        self.assertEqual(pending["label_prefix"], "Xem câu trả lời AI")
+        self.assertTrue(failed["expanded"])
+        self.assertTrue(failed["show_editor"])
+        self.assertEqual(failed["label_prefix"], "Xem lỗi code")
+        self.assertFalse(success["expanded"])
+        self.assertFalse(success["show_editor"])
+        self.assertEqual(success["label_prefix"], "Xem kết quả code")
+
+    def test_11_editor_content_is_the_ai_edit_source(self) -> None:
+        proposal = create_code_proposal_message(
+            "A",
+            "fig.update_layout(title='Biểu đồ cũ')",
+        )
+        editor_code = "fig.update_layout(title='MANUAL TITLE')"
+
+        source_code = resolve_ai_edit_source(proposal, editor_code)
+
+        self.assertEqual(source_code, editor_code)
+        self.assertNotEqual(source_code, proposal["current_code"])
+        self.assertNotEqual(source_code, proposal["answer"])
+        self.assertNotEqual(source_code, proposal["content"])
+
+    def test_12_manual_title_survives_successful_ai_edit(self) -> None:
+        proposal = create_code_proposal_message(
+            "A",
+            (
+                "filtered = df[df['location_name'] == 'Hà Nội']\n"
+                "fig.update_layout(title='Biểu đồ cũ')"
+            ),
+        )
+        messages = [proposal]
+        response_code = (
+            "filtered = df[df['location_name'] == 'Ha Noi']\n"
+            "fig.update_layout(title='MANUAL TITLE')"
+        )
+
+        updated, applied = apply_ai_edit_response(
+            messages,
+            proposal["id"],
+            response_code,
+            edit_instruction="Đổi Hà Nội thành Ha Noi",
+            edit_answer="Đã cập nhật địa điểm.",
+        )
+
+        self.assertTrue(applied)
+        self.assertIn("Ha Noi", updated["current_code"])
+        self.assertIn("MANUAL TITLE", updated["current_code"])
+        self.assertEqual(updated["revision"], 2)
+        self.assertEqual(updated["status"], PENDING_APPROVAL)
+
+    def test_13_failed_ai_edit_preserves_proposal_and_manual_editor(self) -> None:
+        proposal = create_code_proposal_message(
+            "A",
+            "fig.update_layout(title='Biểu đồ cũ')",
+        )
+        proposal.update(
+            {
+                "status": FAILED,
+                "result": {"old": True},
+                "error": "Lỗi cũ",
+                "executed_code": proposal["current_code"],
+            }
+        )
+        messages = [proposal]
+        before = copy.deepcopy(proposal)
+        editor_code = "fig.update_layout(title='MANUAL TITLE')"
+
+        source_code = resolve_ai_edit_source(proposal, editor_code)
+        _, applied = apply_ai_edit_response(
+            messages,
+            proposal["id"],
+            "",
+            edit_instruction="Sửa code",
+            edit_answer="Không có code.",
+        )
+
+        self.assertFalse(applied)
+        self.assertEqual(source_code, editor_code)
+        self.assertEqual(proposal, before)
+        self.assertEqual(proposal["revision"], 1)
+
+    def test_14_success_hides_edit_explanation_without_deleting_audit(self) -> None:
+        proposal = create_code_proposal_message("A", "fig = code_a")
+        messages = [proposal]
+        update_proposal_code(
+            messages,
+            proposal["id"],
+            "fig = code_b",
+            edit_instruction="Sửa B",
+            edit_answer="Giải thích lần sửa.",
+            increment_revision=True,
+        )
+
+        raw_explanation = proposal["edit_history"][-1]["answer"]
+        proposal["status"] = SUCCESS
+
+        self.assertTrue(
+            proposal_ui_policy(PENDING_APPROVAL)["show_edit_explanation"]
+        )
+        self.assertTrue(proposal_ui_policy(FAILED)["show_edit_explanation"])
+        self.assertFalse(proposal_ui_policy(SUCCESS)["show_edit_explanation"])
+        self.assertEqual(
+            proposal["edit_history"][-1]["answer"],
+            raw_explanation,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
-
