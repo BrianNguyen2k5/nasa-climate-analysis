@@ -464,7 +464,7 @@ def render_sidebar() -> dict[str, object]:
             for r_key in REGION_KEYS:
                 st.session_state[f"chk_region_{r_key}"] = True
 
-            # Mặc định chọn tất cả các địa điểm/tỉnh khi mới mở dashboard
+            # Mặc định chọn tất cả các địa điểm khi mới mở dashboard
             st.session_state.chk_loc_select_all = True
             for r_key in REGION_KEYS:
                 for loc_key in LOCATIONS_BY_REGION[r_key]:
@@ -504,9 +504,9 @@ def render_sidebar() -> dict[str, object]:
                     on_change=_on_region_individual_change,
                 )
 
-        # --- Filter Địa điểm - Tỉnh (Location Filter dependent on Vùng) ---
+        # --- Filter Địa điểm - Thành phố (Location Filter dependent on Vùng) ---
         st.markdown(
-            '<div style="color: #1e3a5f; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Tỉnh/Thành phố</div>',
+            '<div style="color: #1e3a5f; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Địa điểm</div>',
             unsafe_allow_html=True,
         )
 
@@ -529,13 +529,13 @@ def render_sidebar() -> dict[str, object]:
 
         loc_count = len(selected_locations)
         if total_avail == 0:
-            loc_popover_label = "0 tỉnh/thành phố"
+            loc_popover_label = "0 địa điểm"
         else:
-            loc_popover_label = f"Đã chọn {loc_count}/{total_avail} tỉnh"
+            loc_popover_label = f"Đã chọn {loc_count}/{total_avail} địa điểm"
 
         with st.popover(loc_popover_label, use_container_width=True):
             if total_avail == 0:
-                st.caption("Vui lòng chọn ít nhất 1 vùng ở trên để hiển thị danh sách tỉnh/thành phố.")
+                st.caption("Vui lòng chọn ít nhất 1 vùng ở trên để hiển thị danh sách địa điểm.")
             else:
                 st.checkbox(
                     "Chọn tất cả",

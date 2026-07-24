@@ -185,7 +185,7 @@ def _scope_label(filters: dict[str, object]) -> str:
         loc_key = locations[0]
         return LOCATION_VIETNAMESE.get(loc_key, loc_key)
     if isinstance(locations, list) and 1 < len(locations) < 20:
-        return f"{len(locations)} tỉnh/thành"
+        return f"{len(locations)} địa điểm"
 
     if isinstance(regions, list) and len(regions) == 1:
         reg_key = regions[0]
@@ -350,16 +350,16 @@ def render_yearly_trend_chart(df: pd.DataFrame, filters: dict[str, object]) -> N
 def build_location_ranking(df: pd.DataFrame, variable: str, filters: dict[str, object]) -> pd.DataFrame:
     label = TREND_VARIABLES[variable]["label"]
     if df.empty:
-        return pd.DataFrame(columns=["Tỉnh/thành", label])
+        return pd.DataFrame(columns=["Địa điểm", label])
 
     if variable == "Nhiệt độ":
         ranking = df.groupby("location_vn", as_index=False)["T2M"].mean()
         ranking = ranking.rename(
-            columns={"location_vn": "Tỉnh/thành", "T2M": label})
+            columns={"location_vn": "Địa điểm", "T2M": label})
     elif variable == "Độ ẩm":
         ranking = df.groupby("location_vn", as_index=False)["RH2M"].mean()
         ranking = ranking.rename(
-            columns={"location_vn": "Tỉnh/thành", "RH2M": label})
+            columns={"location_vn": "Địa điểm", "RH2M": label})
     else:
         annual_rain = (
             df.groupby(["location_vn", "year"], as_index=False)["PRECTOTCORR"]
@@ -369,7 +369,7 @@ def build_location_ranking(df: pd.DataFrame, variable: str, filters: dict[str, o
         ranking = annual_rain.groupby("location_vn", as_index=False)[
             "annual_rain"].mean()
         ranking = ranking.rename(
-            columns={"location_vn": "Tỉnh/thành", "annual_rain": label})
+            columns={"location_vn": "Địa điểm", "annual_rain": label})
 
     ranking[label] = ranking[label].round(2)
     ranking = ranking.sort_values(label, ascending=False)
@@ -410,14 +410,14 @@ def render_location_ranking_bar_chart(df: pd.DataFrame, filters: dict[str, objec
         .encode(
             x=alt.X(field=label, type="quantitative", title=label),
             y=alt.Y(
-                field="Tỉnh/thành",
+                field="Địa điểm",
                 type="nominal",
-                title="Tỉnh/thành",
+                title="Địa điểm",
                 sort=alt.SortField(field=label, order="descending"),
             ),
             tooltip=[
-                alt.Tooltip(field="Tỉnh/thành", type="nominal",
-                            title="Tỉnh/thành"),
+                alt.Tooltip(field="Địa điểm", type="nominal",
+                            title="Địa điểm"),
                 alt.Tooltip(field=label, type="quantitative",
                             title=label, format=".2f"),
             ],
@@ -838,7 +838,7 @@ def render_overview_regions_tab(placeholder_box, filters: dict[str, object] | No
     with left:
         st.markdown(
             '<div class="section-title" style="margin-top: 10px; margin-bottom: 4px;">'
-            'Bản đồ các tỉnh/thành</div>',
+            'Bản đồ các địa điểm</div>',
             unsafe_allow_html=True,
         )
         render_vietnam_reference_map(filtered_df)
