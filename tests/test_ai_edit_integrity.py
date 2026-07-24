@@ -20,7 +20,12 @@ from ai_assistant.conversation_state import (
     apply_ai_edit_response,
     create_code_proposal_message,
 )
-from ai_assistant.models import AIResponse, ask_groq
+from ai_assistant.models import (
+    AIResponse,
+    INVALID_CODE_RESPONSE_MESSAGE,
+    ask_groq,
+    parse_model_response,
+)
 from tabs import tab_6_ai_assistant as ai_tab
 
 
@@ -150,6 +155,30 @@ fig.update_layout(title="MANUAL TITLE")
     def test_11_complete_changed_program_is_valid(self) -> None:
         result = validate_ai_edit_candidate(SOURCE_CODE, VALID_EDIT)
 
+        self.assertTrue(result.valid)
+        self.assertEqual(result.reason, "valid")
+
+    def test_11b_fence_fallback_still_rejects_placeholder_code(self) -> None:
+        response = parse_model_response(
+            "```python\n...\n```",
+            wants_code=True,
+        )
+        candidate = sanitize_generated_code(response.code)
+        result = validate_ai_edit_candidate(SOURCE_CODE, candidate)
+
+        self.assertEqual(response.code, "...")
+        self.assertFalse(result.valid)
+        self.assertEqual(result.reason, "placeholder")
+
+    def test_11c_full_fenced_edit_reaches_integrity_validator(self) -> None:
+        response = parse_model_response(
+            f"Đã sửa code:\n```python\n{VALID_EDIT}\n```",
+            wants_code=True,
+        )
+        candidate = sanitize_generated_code(response.code)
+        result = validate_ai_edit_candidate(SOURCE_CODE, candidate)
+
+        self.assertEqual(candidate, VALID_EDIT.strip())
         self.assertTrue(result.valid)
         self.assertEqual(result.reason, "valid")
 
@@ -373,6 +402,79 @@ class AIEditUIBoundaryTests(unittest.TestCase):
 
         self.assertEqual(proposal, before)
         self.assertEqual(fake_st.warnings, [INCOMPLETE_AI_EDIT_MESSAGE])
+        persist.assert_not_called()
+        fake_st.rerun.assert_not_called()
+
+    def test_17_missing_code_uses_format_warning_before_validator(self) -> None:
+        proposal = create_code_proposal_message("Code ban đầu", SOURCE_CODE)
+        before = copy.deepcopy(proposal)
+
+        class FakeStreamlit:
+            def __init__(self) -> None:
+                self.session_state = SimpleNamespace(ai_messages=[proposal])
+                self.warnings: list[str] = []
+                self.rerun = Mock()
+
+            @staticmethod
+            def markdown(*_args, **_kwargs) -> None:
+                return None
+
+            @staticmethod
+            def caption(*_args, **_kwargs) -> None:
+                return None
+
+            @staticmethod
+            def text_area(*_args, **_kwargs) -> str:
+                return SOURCE_CODE
+
+            @staticmethod
+            def text_input(*_args, **_kwargs) -> str:
+                return "Đổi line thành bar"
+
+            @staticmethod
+            def columns(spec):
+                return [nullcontext() for _ in spec]
+
+            @staticmethod
+            def spinner(*_args, **_kwargs):
+                return nullcontext()
+
+            @staticmethod
+            def button(label, *_args, **_kwargs) -> bool:
+                return label == "Nhờ AI sửa code"
+
+            def warning(self, message: str) -> None:
+                self.warnings.append(message)
+
+        fake_st = FakeStreamlit()
+        persist = Mock()
+
+        with (
+            patch.object(ai_tab, "st", fake_st),
+            patch.object(
+                ai_tab,
+                "ask_groq",
+                return_value=AIResponse(
+                    answer="Phản hồi không có code.",
+                    code="",
+                ),
+            ),
+            patch.object(ai_tab, "_persist_active_messages", persist),
+            patch.object(
+                ai_tab,
+                "validate_ai_edit_candidate",
+            ) as validator,
+        ):
+            ai_tab._render_code_review(
+                proposal["id"],
+                None,
+                SimpleNamespace(),
+                "dataset context",
+            )
+
+        self.assertEqual(proposal, before)
+        self.assertEqual(fake_st.warnings, [INVALID_CODE_RESPONSE_MESSAGE])
+        validator.assert_not_called()
         persist.assert_not_called()
         fake_st.rerun.assert_not_called()
 

@@ -139,6 +139,106 @@ class ModelResponseHygieneTests(unittest.TestCase):
         self.assertEqual(response.chart_title, "")
         self.assertEqual(response.suggestions, [])
 
+    def test_14_code_mode_accepts_one_closed_python_fence(self) -> None:
+        response = parse_model_response(
+            "```python\nfig = px.line(df, x='date', y='T2M')\n```",
+            wants_code=True,
+        )
+
+        self.assertEqual(response.answer, "")
+        self.assertEqual(
+            response.code,
+            "fig = px.line(df, x='date', y='T2M')",
+        )
+
+    def test_15_code_mode_accepts_unlabeled_fence_and_discards_prose(
+        self,
+    ) -> None:
+        response = parse_model_response(
+            "Đã sửa toàn bộ code:\n```\nfig = px.bar(df, x='year', y='T2M')\n```"
+            "\nBạn có thể chạy lại.",
+            wants_code=True,
+        )
+
+        self.assertEqual(response.answer, "")
+        self.assertEqual(
+            response.code,
+            "fig = px.bar(df, x='year', y='T2M')",
+        )
+
+    def test_16_text_mode_does_not_accept_python_fence(self) -> None:
+        response = parse_model_response(
+            "```python\nfig = px.line(df)\n```",
+        )
+
+        self.assertEqual(response.answer, INVALID_MODEL_RESPONSE_MESSAGE)
+        self.assertEqual(response.code, "")
+
+    def test_17_unclosed_multiple_or_wrong_language_fences_are_rejected(
+        self,
+    ) -> None:
+        invalid_responses = (
+            "```python\nfig = px.line(df)",
+            "```python\nfig = px.line(df)\n```\n```python\nfig = px.bar(df)\n```",
+            "```javascript\nconst fig = chart();\n```",
+        )
+
+        for raw in invalid_responses:
+            with self.subTest(raw=raw):
+                response = parse_model_response(raw, wants_code=True)
+                self.assertEqual(
+                    response.answer,
+                    INVALID_MODEL_RESPONSE_MESSAGE,
+                )
+                self.assertEqual(response.code, "")
+
+    def test_18_reasoning_hygiene_still_applies_before_fence_fallback(
+        self,
+    ) -> None:
+        unclosed = parse_model_response(
+            "<think>secret\n```python\nfig = px.line(df)\n```",
+            wants_code=True,
+        )
+        closed = parse_model_response(
+            "<think>secret</think>\n"
+            "```python\nfig = px.line(df)\n```",
+            wants_code=True,
+        )
+
+        self.assertEqual(unclosed.answer, INVALID_MODEL_RESPONSE_MESSAGE)
+        self.assertEqual(unclosed.code, "")
+        self.assertEqual(closed.answer, "")
+        self.assertEqual(closed.code, "fig = px.line(df)")
+
+    def test_19_valid_json_wins_and_external_fence_is_ignored(self) -> None:
+        response = parse_model_response(
+            '{"answer":"JSON answer","code":"fig = px.line(df)"}\n'
+            "```python\nfig = px.bar(df)\n```",
+            wants_code=True,
+        )
+
+        self.assertEqual(response.answer, "JSON answer")
+        self.assertEqual(response.code, "fig = px.line(df)")
+
+    def test_20_malformed_or_alternate_json_cannot_hide_behind_fence(
+        self,
+    ) -> None:
+        invalid_responses = (
+            '{"answer":"broken","code":\n'
+            "```python\nfig = px.line(df)\n```",
+            '{"python_code":"fig = px.line(df)"}\n'
+            "```python\nfig = px.line(df)\n```",
+        )
+
+        for raw in invalid_responses:
+            with self.subTest(raw=raw):
+                response = parse_model_response(raw, wants_code=True)
+                self.assertEqual(
+                    response.answer,
+                    INVALID_MODEL_RESPONSE_MESSAGE,
+                )
+                self.assertEqual(response.code, "")
+
 
 class _RerunRequested(Exception):
     pass

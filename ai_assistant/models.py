@@ -57,6 +57,10 @@ MODEL_RESPONSE_FIELDS = {
 INVALID_MODEL_RESPONSE_MESSAGE = (
     "Phản hồi từ mô hình không đúng định dạng an toàn. Vui lòng thử lại."
 )
+INVALID_CODE_RESPONSE_MESSAGE = (
+    "AI không trả về code Python đúng định dạng. "
+    "Code hiện tại được giữ nguyên, vui lòng thử lại."
+)
 AI_EDIT_FULL_CODE_CONTRACT = """
 Khi Mode là `Sửa code`, trường `code` phải chứa TOÀN BỘ chương trình Python
 sau khi sửa:
@@ -316,13 +320,44 @@ def sanitize_ai_response(response: AIResponse) -> AIResponse:
     )
 
 
-def parse_model_response(text: str) -> AIResponse:
+def _extract_single_python_fence(text: str) -> str:
+    if text.count("```") != 2:
+        return ""
+    fence_match = re.search(
+        r"```(?P<language>[^\r\n]*)\r?\n(?P<code>.*?)```",
+        text,
+        flags=re.DOTALL,
+    )
+    if not fence_match:
+        return ""
+    language = fence_match.group("language").strip().casefold()
+    if language not in {"", "python"}:
+        return ""
+    outside_fence = (
+        text[:fence_match.start()] + text[fence_match.end():]
+    )
+    if "{" in outside_fence or "}" in outside_fence:
+        return ""
+    return sanitize_model_text(fence_match.group("code"))
+
+
+def parse_model_response(
+    text: str,
+    *,
+    wants_code: bool = False,
+) -> AIResponse:
     sanitized_raw = sanitize_model_text(text)
     if not sanitized_raw:
         return AIResponse(answer=INVALID_MODEL_RESPONSE_MESSAGE)
 
     data = _extract_json(sanitized_raw)
     if not data:
+        if wants_code:
+            fenced_code = _extract_single_python_fence(sanitized_raw)
+            if fenced_code:
+                return sanitize_ai_response(
+                    AIResponse(answer="", code=fenced_code)
+                )
         return AIResponse(answer=INVALID_MODEL_RESPONSE_MESSAGE)
 
     sanitized_data = sanitize_structured_response_data(data)
@@ -445,7 +480,9 @@ Trả về DUY NHẤT một JSON hợp lệ:
         )
 
     text = response.choices[0].message.content or ""
-    return sanitize_ai_response(parse_model_response(text))
+    return sanitize_ai_response(
+        parse_model_response(text, wants_code=wants_code)
+    )
 
 
 def ask_gemini_vision(config: AIConfig, image_bytes: bytes, filename: str, prompt: str) -> str:

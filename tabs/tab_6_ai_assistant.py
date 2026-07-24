@@ -44,6 +44,7 @@ from ai_assistant.logs import (
     save_session_messages,
 )
 from ai_assistant.models import (
+    INVALID_CODE_RESPONSE_MESSAGE,
     ask_gemini_vision,
     ask_groq,
     sanitize_ai_response,
@@ -358,6 +359,9 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
                 "Sửa code",
                 code_input=source_code,
             )
+        if not response.code.strip():
+            st.warning(INVALID_CODE_RESPONSE_MESSAGE)
+            return
         fixed_code = sanitize_generated_code(response.code)
         if fixed_code:
             fixed_code = sanitize_generated_code(apply_simple_code_edit(fixed_code, user_fix))
