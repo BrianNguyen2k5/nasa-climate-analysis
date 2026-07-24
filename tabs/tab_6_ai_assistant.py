@@ -10,7 +10,7 @@ from ai_assistant.chart_templates import build_chart_code_from_prompt
 from ai_assistant.code_edit_templates import apply_simple_code_edit
 from ai_assistant.code_sanitizer import (
     sanitize_generated_code,
-    validate_ai_edit_candidate,
+    validate_ai_edit_for_application,
 )
 from ai_assistant.config import load_ai_config
 from ai_assistant.conversation_state import (
@@ -347,9 +347,12 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
         fix_prompt = (
             f"{user_fix}\n\n"
             "Trả lại toàn bộ chương trình Python sau khi sửa, không trả diff, "
-            "fragment hoặc placeholder. Giữ nguyên mọi phần không liên quan. "
-            "Code cuối phải tạo biến `fig`, không dùng import/file/network "
-            "và không tự tạo dữ liệu giả."
+            "fragment hoặc placeholder. Chỉ sửa đúng nội dung được yêu cầu và "
+            "giữ nguyên mọi logic, filter, metric, aggregation, chart type, "
+            "x/y/color/labels/title không liên quan. Đây là code cho local "
+            "runner; app tự lấy và render biến `fig`. Không dùng "
+            "import/file/network, không tự tạo dữ liệu giả và tuyệt đối không "
+            "gọi print/display/show/st/plt hoặc renderer khác."
         )
         with st.spinner("Groq đang sửa code..."):
             response = ask_groq(
@@ -362,10 +365,20 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
         if not response.code.strip():
             st.warning(INVALID_CODE_RESPONSE_MESSAGE)
             return
-        fixed_code = sanitize_generated_code(response.code)
+        fixed_code = sanitize_generated_code(
+            response.code,
+            preserve_imports=True,
+        )
         if fixed_code:
-            fixed_code = sanitize_generated_code(apply_simple_code_edit(fixed_code, user_fix))
-        validation = validate_ai_edit_candidate(source_code, fixed_code)
+            fixed_code = sanitize_generated_code(
+                apply_simple_code_edit(fixed_code, user_fix),
+                preserve_imports=True,
+            )
+        validation = validate_ai_edit_for_application(
+            source_code,
+            fixed_code,
+            user_fix,
+        )
         if not validation.valid:
             st.warning(validation.message)
             return

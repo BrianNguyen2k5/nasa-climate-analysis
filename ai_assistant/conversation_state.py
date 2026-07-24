@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, MutableMapping
 
-from .code_sanitizer import validate_ai_edit_candidate
+from .code_sanitizer import validate_ai_edit_for_application
 
 
 CODE_PROPOSAL_KIND = "code_proposal"
@@ -224,7 +224,11 @@ def apply_ai_edit_response(
         if source_code is not None
         else str(message.get("current_code") or "")
     )
-    validation = validate_ai_edit_candidate(source, candidate)
+    validation = validate_ai_edit_for_application(
+        source,
+        candidate,
+        edit_instruction,
+    )
     if not validation.valid:
         return message, False
 

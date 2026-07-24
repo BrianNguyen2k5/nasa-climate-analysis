@@ -67,9 +67,18 @@ sau khi sửa:
 - Không trả diff hoặc patch.
 - Không chỉ trả đoạn code đã thay đổi.
 - Giữ nguyên các phần source code không liên quan đến yêu cầu sửa.
+- Chỉ sửa đúng nội dung người dùng yêu cầu; không tự refactor hoặc đổi metric,
+  filter, year, location, aggregation, chart type, x, y, color, labels hay
+  title nếu người dùng không yêu cầu phần đó.
 - Không dùng `...`, `…`, comment thay code, placeholder, `rest unchanged`,
   `rest of code`, `same as above` hoặc `phần còn lại giữ nguyên`.
 - Nếu source code tạo biểu đồ, code cuối vẫn phải tạo/gán biến `fig`.
+- Đây là code cho local runner chỉ có `df`, `pd`, `np`, `px`, `go`.
+- Runner tự lấy biến `fig` và render biểu đồ. Tuyệt đối không gọi
+  `print(fig)`, `display()`, `fig.show()`, bất kỳ `*.show()`,
+  `st.plotly_chart()`, `st.pyplot()`, `plt.show()` hoặc `write_html()`.
+- Không thêm import, namespace `st`, `streamlit`, `plt`, `matplotlib` hoặc
+  `IPython`.
 - Explanation chỉ được đặt trong `answer`, không nhúng vào `code`.
 """
 _REASONING_BLOCK_RE = re.compile(

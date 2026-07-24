@@ -13,6 +13,7 @@ from ai_assistant.code_sanitizer import (
     UNCHANGED_AI_EDIT_MESSAGE,
     sanitize_generated_code,
     validate_ai_edit_candidate,
+    validate_runner_compatibility,
 )
 from ai_assistant.conversation_state import (
     PENDING_APPROVAL,
@@ -113,10 +114,10 @@ chart = px.bar(df_chart, x="year", y="T2M")
 chart.update_layout(title="MANUAL TITLE")
 """
 
-        result = validate_ai_edit_candidate(SOURCE_CODE, candidate)
+        result = validate_runner_compatibility(candidate)
 
         self.assertFalse(result.valid)
-        self.assertEqual(result.reason, "missing_required_structure")
+        self.assertEqual(result.reason, "missing_fig")
 
     def test_08_short_code_fragment_is_rejected_even_when_it_assigns_fig(
         self,
@@ -147,10 +148,10 @@ fig.update_layout(title="MANUAL TITLE")
     def test_10_unsafe_candidate_is_rejected_before_state_mutation(self) -> None:
         candidate = VALID_EDIT + '\ncontent = open("secret.txt").read()\n'
 
-        result = validate_ai_edit_candidate(SOURCE_CODE, candidate)
+        result = validate_runner_compatibility(candidate)
 
         self.assertFalse(result.valid)
-        self.assertEqual(result.reason, "unsafe_or_invalid")
+        self.assertEqual(result.reason, "unsafe_builtin")
 
     def test_11_complete_changed_program_is_valid(self) -> None:
         result = validate_ai_edit_candidate(SOURCE_CODE, VALID_EDIT)
@@ -332,6 +333,10 @@ class AIEditPromptContractTests(unittest.TestCase):
         self.assertIn("TOÀN BỘ chương trình Python", system_prompt)
         self.assertIn("Không trả diff hoặc patch", system_prompt)
         self.assertIn("phần còn lại giữ nguyên", system_prompt)
+        self.assertIn("Chỉ sửa đúng nội dung người dùng yêu cầu", system_prompt)
+        self.assertIn("local runner", system_prompt)
+        self.assertIn("print(fig)", system_prompt)
+        self.assertIn("st.plotly_chart()", system_prompt)
         self.assertIn(SOURCE_CODE, user_prompt)
         self.assertIn("Đổi line thành bar", user_prompt)
 
@@ -462,7 +467,7 @@ class AIEditUIBoundaryTests(unittest.TestCase):
             patch.object(ai_tab, "_persist_active_messages", persist),
             patch.object(
                 ai_tab,
-                "validate_ai_edit_candidate",
+                "validate_ai_edit_for_application",
             ) as validator,
         ):
             ai_tab._render_code_review(

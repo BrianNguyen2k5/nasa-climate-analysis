@@ -294,12 +294,14 @@ class AIAssistantStateTests(unittest.TestCase):
             "A",
             (
                 "filtered = df[df['location_name'] == 'Hà Nội']\n"
+                "fig = px.line(filtered, x='date', y='T2M')\n"
                 "fig.update_layout(title='Biểu đồ cũ')"
             ),
         )
         messages = [proposal]
         response_code = (
             "filtered = df[df['location_name'] == 'Ha Noi']\n"
+            "fig = px.line(filtered, x='date', y='T2M')\n"
             "fig.update_layout(title='MANUAL TITLE')"
         )
 
