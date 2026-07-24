@@ -1,5 +1,6 @@
 ﻿import json
 import uuid
+from contextlib import contextmanager
 
 import plotly.io as pio
 import streamlit as st
@@ -35,6 +36,13 @@ from ai_assistant.conversation_state import (
     reset_ai_transient_state,
     resolve_ai_edit_source,
     update_proposal_code,
+)
+from ai_assistant.conversation_view import (
+    build_answer_number_map,
+    build_conversation_turns,
+    find_latest_assistant_answer_id,
+    should_expand_message,
+    sort_turns_newest_first,
 )
 from ai_assistant.data_context import dataset_context, load_dataset
 from ai_assistant.dataset_qa import answer_dataset_question
@@ -194,11 +202,29 @@ def _request_open_chat(session_id: str) -> None:
     st.rerun()
 
 
-def _render_ai_response_detail(message: dict, label: str = "Xem câu trả lời") -> None:
-    with st.expander(label, expanded=False):
+def _render_ai_response_detail(
+    message: dict,
+    label: str = "Xem câu trả lời",
+    *,
+    expanded: bool = False,
+) -> None:
+    with st.expander(label, expanded=expanded):
         st.markdown(message.get("content", ""))
         if message.get("status"):
             st.caption(f"Trạng thái: {message['status']}")
+
+
+@contextmanager
+def _render_active_request_status(
+    placeholder,
+    prompt: str,
+    status: str,
+):
+    with placeholder.container():
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        with st.spinner(status):
+            yield
 
 
 def _result_context(result: dict) -> str:
@@ -443,8 +469,8 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
 
 def _render_code_proposal(
     message: dict,
-    proposal_number: int,
-    latest_success_id: str | None,
+    proposal_number: int | str,
+    latest_answer_id: str | None,
     df,
     config,
     context_text: str,
@@ -452,9 +478,7 @@ def _render_code_proposal(
     message_id = str(message["id"])
     status = str(message.get("status") or PENDING_APPROVAL)
     policy = proposal_ui_policy(status)
-    expanded = bool(policy["expanded"])
-    if status == SUCCESS and message_id == latest_success_id:
-        expanded = True
+    expanded = should_expand_message(message, latest_answer_id)
     label = f"{policy['label_prefix']} #{proposal_number} · {status}"
 
     with st.expander(label, expanded=expanded):
@@ -488,36 +512,55 @@ def _render_code_proposal(
             )
 
 
-def _render_messages(df, config, context_text: str) -> None:
-    latest_success_id = next(
-        (
-            str(message["id"])
-            for message in reversed(st.session_state.ai_messages)
-            if is_code_proposal(message) and message.get("status") == SUCCESS
-        ),
-        None,
+def _render_messages(
+    df,
+    config,
+    context_text: str,
+    *,
+    excluded_request_id: str | None = None,
+) -> None:
+    messages = [
+        message
+        for message in st.session_state.ai_messages
+        if not excluded_request_id
+        or str(message.get("request_id") or "") != excluded_request_id
+    ]
+    latest_answer_id = find_latest_assistant_answer_id(messages)
+    answer_numbers = build_answer_number_map(messages)
+    display_turns = sort_turns_newest_first(
+        build_conversation_turns(messages)
     )
-    answer_index = 1
-    for message in st.session_state.ai_messages:
-        role = message.get("role")
-        if role == "user":
-            with st.chat_message("user"):
-                st.markdown(message.get("content", ""))
-            continue
 
-        with st.chat_message("assistant"):
-            if is_code_proposal(message):
-                _render_code_proposal(
-                    message,
-                    answer_index,
-                    latest_success_id,
-                    df,
-                    config,
-                    context_text,
-                )
-            else:
-                _render_ai_response_detail(message, f"Xem câu trả lời AI #{answer_index}")
-            answer_index += 1
+    for turn in display_turns:
+        for message in turn.messages:
+            role = message.get("role")
+            if role == "user":
+                with st.chat_message("user"):
+                    st.markdown(message.get("content", ""))
+                continue
+
+            message_id = str(message.get("id") or "")
+            answer_number = answer_numbers.get(message_id)
+            label_number = answer_number if answer_number is not None else "?"
+            with st.chat_message("assistant"):
+                if is_code_proposal(message):
+                    _render_code_proposal(
+                        message,
+                        label_number,
+                        latest_answer_id,
+                        df,
+                        config,
+                        context_text,
+                    )
+                else:
+                    _render_ai_response_detail(
+                        message,
+                        f"Xem câu trả lời AI #{label_number}",
+                        expanded=should_expand_message(
+                            message,
+                            latest_answer_id,
+                        ),
+                    )
 
 
 def _render_history() -> None:
@@ -535,22 +578,51 @@ def _render_history() -> None:
                 use_container_width=True,
             ):
                 _request_open_chat(str(session["id"]))
-            answer_index = 1
-            for message in normalize_messages(session.get("messages", [])):
-                if message.get("role") == "user":
-                    st.markdown(f"**Người dùng:** {message.get('content', '')}")
-                elif is_code_proposal(message):
-                    st.markdown(f"**AI:** {message.get('answer', message.get('content', ''))}")
-                    st.code(message.get("current_code", ""), language="python")
-                    st.caption(f"Trạng thái: {message.get('status', PENDING_APPROVAL)}")
-                    if message.get("error"):
-                        st.error(str(message["error"]))
-                    if message.get("conclusion"):
-                        st.info(str(message["conclusion"]))
-                    answer_index += 1
-                else:
-                    _render_ai_response_detail(message, f"Xem câu trả lời AI #{answer_index}")
-                    answer_index += 1
+            messages = normalize_messages(session.get("messages", []))
+            latest_answer_id = find_latest_assistant_answer_id(messages)
+            answer_numbers = build_answer_number_map(messages)
+            display_turns = sort_turns_newest_first(
+                build_conversation_turns(messages)
+            )
+            for turn in display_turns:
+                for message in turn.messages:
+                    if message.get("role") == "user":
+                        st.markdown(
+                            f"**Người dùng:** {message.get('content', '')}"
+                        )
+                        continue
+
+                    message_id = str(message.get("id") or "")
+                    answer_number = answer_numbers.get(message_id)
+                    label_number = (
+                        answer_number if answer_number is not None else "?"
+                    )
+                    if is_code_proposal(message):
+                        st.markdown(
+                            f"**AI:** "
+                            f"{message.get('answer', message.get('content', ''))}"
+                        )
+                        st.code(
+                            message.get("current_code", ""),
+                            language="python",
+                        )
+                        st.caption(
+                            f"Trạng thái: "
+                            f"{message.get('status', PENDING_APPROVAL)}"
+                        )
+                        if message.get("error"):
+                            st.error(str(message["error"]))
+                        if message.get("conclusion"):
+                            st.info(str(message["conclusion"]))
+                    else:
+                        _render_ai_response_detail(
+                            message,
+                            f"Xem câu trả lời AI #{label_number}",
+                            expanded=should_expand_message(
+                                message,
+                                latest_answer_id,
+                            ),
+                        )
 
 
 def render_ai_assistant_tab(placeholder_box=None) -> None:
@@ -597,11 +669,33 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
             use_container_width=True,
         )
 
-        _render_messages(df, config, context_text)
+        active_request_id = (
+            str(uuid.uuid4())
+            if send and prompt.strip()
+            else None
+        )
+        active_request_placeholder = st.empty()
+        _render_messages(
+            df,
+            config,
+            context_text,
+            excluded_request_id=active_request_id,
+        )
 
-        if send and prompt.strip():
-            request_id = str(uuid.uuid4())
-            _add_message("user", prompt, mode=mode, request_id=request_id)
+        if active_request_id is not None:
+            request_id = active_request_id
+            active_user_exists = any(
+                message.get("role") == "user"
+                and str(message.get("request_id") or "") == request_id
+                for message in st.session_state.ai_messages
+            )
+            if not active_user_exists:
+                _add_message(
+                    "user",
+                    prompt,
+                    mode=mode,
+                    request_id=request_id,
+                )
 
             if mode == "Thống kê dataset":
                 local_answer = answer_dataset_question(prompt, df)
@@ -617,7 +711,11 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
 
             extra_context = ""
             if image_file is not None:
-                with st.spinner("Gemini Vision đang phân tích ảnh..."):
+                with _render_active_request_status(
+                    active_request_placeholder,
+                    prompt,
+                    "Gemini Vision đang phân tích ảnh...",
+                ):
                     vision_text = ask_gemini_vision(
                         config,
                         image_file.getvalue(),
@@ -655,7 +753,11 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
                 else ""
             )
 
-            with st.spinner("Groq đang xử lý yêu cầu..."):
+            with _render_active_request_status(
+                active_request_placeholder,
+                prompt,
+                "Groq đang xử lý yêu cầu...",
+            ):
                 response = ask_groq(
                     config,
                     prompt,

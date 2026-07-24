@@ -306,6 +306,13 @@ class _FakeStreamlit:
     def spinner(*_args, **_kwargs):
         return nullcontext()
 
+    def empty(self):
+        return self
+
+    @staticmethod
+    def container():
+        return nullcontext()
+
     @staticmethod
     def chat_message(*_args, **_kwargs):
         return nullcontext()
