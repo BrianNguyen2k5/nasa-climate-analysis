@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 import json
@@ -785,6 +785,8 @@ def sanitize_generated_code(
                 cleaned_lines.append(line)
             continue
         if stripped in {'"code":', "'code':", "code:", "{", "}"}:
+            continue
+        if re.match(r"^(?:fig|[a-zA-Z_]\w*)\.(?:show|write_html)\(\s*\)\s*;?$", stripped):
             continue
         if re.match(r'^["\']?(answer|chart_title|suggestions)["\']?\s*:', stripped):
             break

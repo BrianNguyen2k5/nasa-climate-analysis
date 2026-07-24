@@ -1,4 +1,4 @@
-﻿import json
+import json
 import uuid
 from contextlib import contextmanager
 
@@ -659,7 +659,7 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
             "Yêu cầu của bạn",
             value=st.session_state.get(PROMPT_WIDGET_KEY, ""),
             height=120,
-            placeholder=PROMPT_PLACEHOLDERS.get(mode, "Nhập yêu cầu phân tích khí hậu..."),
+            placeholder=PROMPT_PLACEHOLDERS.get(mode, "Nhập yêu cầu phân tích ..."),
             key=PROMPT_WIDGET_KEY,
         )
 
@@ -767,6 +767,14 @@ def render_ai_assistant_tab(placeholder_box=None) -> None:
                     code_input=active_code,
                 )
             response = sanitize_ai_response(response)
+
+            if mode not in {"Sinh chart/code", "Sửa code"}:
+                if response.code:
+                    response.answer = (
+                        "💡 **Lưu ý:** Bạn đang lựa chọn tác vụ **'AI gợi ý'** nên hệ thống chỉ đưa ra tư vấn văn bản. "
+                        "Nếu bạn muốn hệ thống sinh mã Python và tự động vẽ biểu đồ, vui lòng chuyển sang tác vụ **'Sinh chart/code'**."
+                    )
+                response.code = ""
 
             response_source = "groq"
             if mode == "Sinh chart/code" and not response.code:

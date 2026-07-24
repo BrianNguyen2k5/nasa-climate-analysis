@@ -57,11 +57,12 @@ def summarize_chart(fig_json: dict[str, Any]) -> str:
         lines.append("Biểu đồ cho thấy:")
 
     means: list[tuple[str, float]] = []
+    trace_x_details: list[dict[str, Any]] = []
     trend_counts = {"tăng": 0, "giảm": 0, "gần như không đổi": 0}
     for index, trace in enumerate(data, start=1):
         if not isinstance(trace, dict):
             continue
-        name = trace.get("name") or f"Chuỗi {index}"
+        name = trace.get("name") or (f"Dữ liệu" if len(data) == 1 else f"Chuỗi {index}")
         y_values = _valid_numbers(trace.get("y") or trace.get("values"))
         x_values = _as_list(trace.get("x") or trace.get("labels"))
         if not y_values:
@@ -75,6 +76,16 @@ def summarize_chart(fig_json: dict[str, Any]) -> str:
         trend = "tăng" if last_value > first_value else "giảm" if last_value < first_value else "gần như không đổi"
         means.append((name, mean_value))
         trend_counts[trend] += 1
+
+        trace_x_details.append({
+            "name": name,
+            "mean": mean_value,
+            "min": min_value,
+            "max": max_value,
+            "x_values": x_values,
+            "y_values": y_values,
+            "trend": trend,
+        })
 
         detail = (
             f"- {name}: trung bình {_format_number(mean_value)}, "
@@ -101,17 +112,34 @@ def summarize_chart(fig_json: dict[str, Any]) -> str:
         )
         lines.append(
             "\n**Kết luận chính:** "
-            f"Biểu đồ cho thấy khác biệt nhiệt độ giữa các địa điểm là đáng chú ý, "
-            f"với chênh lệch trung bình khoảng {_format_number(spread)}°C giữa nơi cao nhất và thấp nhất. "
-            f"Xu hướng đầu-cuối phổ biến là {dominant_trend}; vì vậy có thể xem {highest[0]} là khu vực nổi bật về nền nhiệt cao, "
-            f"trong khi {lowest[0]} đại diện cho nền nhiệt thấp hơn trong nhóm so sánh."
+            f"Biểu đồ cho thấy khác biệt giữa các chuỗi dữ liệu là đáng chú ý, "
+            f"với chênh lệch trung bình khoảng {_format_number(spread)} giữa nơi cao nhất và thấp nhất. "
+            f"Xu hướng đầu-cuối phổ biến là {dominant_trend}; vì vậy có thể xem {highest[0]} là khu vực nổi bật nhất, "
+            f"trong khi {lowest[0]} đại diện cho mức thấp hơn trong nhóm so sánh."
         )
     elif len(means) == 1:
-        only = means[0]
-        lines.append(
-            "\n**Kết luận chính:** "
-            f"Chuỗi {only[0]} có mức trung bình {_format_number(only[1])}. "
-            "Cần so sánh thêm với địa điểm hoặc giai đoạn khác để rút ra kết luận đối chiếu rõ hơn."
-        )
+        single = trace_x_details[0]
+        x_vals = single["x_values"]
+        y_vals = single["y_values"]
+        if x_vals and len(x_vals) == len(y_vals) and len(x_vals) > 1:
+            max_idx = y_vals.index(single["max"])
+            min_idx = y_vals.index(single["min"])
+            max_cat = x_vals[max_idx]
+            min_cat = x_vals[min_idx]
+            spread = single["max"] - single["min"]
+            lines.append(
+                "\n**Kết luận chính:** "
+                f"Biểu đồ thể hiện sự phân hóa rõ rệt giữa các danh mục: "
+                f"cao nhất tại **{max_cat}** ({_format_number(single['max'])}), "
+                f"thấp nhất tại **{min_cat}** ({_format_number(single['min'])}), "
+                f"với độ chênh lệch là {_format_number(spread)} và mức trung bình chung đạt {_format_number(single['mean'])}."
+            )
+        else:
+            only = means[0]
+            lines.append(
+                "\n**Kết luận chính:** "
+                f"Dữ liệu có mức trung bình {_format_number(only[1])}. "
+                "Cần so sánh thêm với địa điểm hoặc giai đoạn khác để rút ra kết luận đối chiếu rõ hơn."
+            )
 
     return "\n".join(lines)

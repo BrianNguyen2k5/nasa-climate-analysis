@@ -55,7 +55,7 @@ MODEL_RESPONSE_FIELDS = {
     "explanation",
 }
 INVALID_MODEL_RESPONSE_MESSAGE = (
-    "Phản hồi từ mô hình không đúng định dạng an toàn. Vui lòng thử lại."
+    "Request của bạn khiến cho AI đưa ra kết quả trả lời sai mục tiêu chức năng của trang. Vui lòng thử lại."
 )
 INVALID_CODE_RESPONSE_MESSAGE = (
     "AI không trả về code Python đúng định dạng. "
