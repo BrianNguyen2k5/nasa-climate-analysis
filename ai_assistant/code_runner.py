@@ -11,6 +11,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+from .code_sanitizer import validate_runner_compatibility
+
 
 FORBIDDEN_NAMES = {
     "__import__",
@@ -37,6 +39,8 @@ class ExecutionResult:
     message: str
     fig_json: dict[str, Any] | None = None
     table_preview: list[dict[str, Any]] | None = None
+    validation_reason: str | None = None
+    validation_detail: str | None = None
 
 
 def _is_valid_value(value: Any) -> bool:
@@ -89,7 +93,24 @@ def validate_code(code: str) -> None:
                 raise ValueError("Code phê duyệt không được đọc/ghi file hoặc xuất dữ liệu ra ngoài.")
 
 
+def _execute_validated_code(
+    code: str,
+    safe_globals: dict[str, Any],
+    safe_locals: dict[str, Any],
+) -> None:
+    exec(code, safe_globals, safe_locals)
+
+
 def execute_chart_code(code: str, df: pd.DataFrame) -> ExecutionResult:
+    runner_validation = validate_runner_compatibility(code)
+    if not runner_validation.valid:
+        return ExecutionResult(
+            False,
+            runner_validation.message,
+            validation_reason=runner_validation.reason,
+            validation_detail=runner_validation.detail or None,
+        )
+
     try:
         validate_code(code)
         safe_globals = {
@@ -122,7 +143,7 @@ def execute_chart_code(code: str, df: pd.DataFrame) -> ExecutionResult:
             },
         }
         safe_locals: dict[str, Any] = {}
-        exec(code, safe_globals, safe_locals)
+        _execute_validated_code(code, safe_globals, safe_locals)
         fig = safe_locals.get("fig") or safe_globals.get("fig")
         if fig is None:
             return ExecutionResult(False, "Code phải tạo biến `fig` là Plotly Figure.")
@@ -143,4 +164,3 @@ def execute_chart_code(code: str, df: pd.DataFrame) -> ExecutionResult:
         )
     except Exception as error:
         return ExecutionResult(False, str(error))
-

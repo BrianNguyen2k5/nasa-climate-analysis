@@ -243,12 +243,58 @@ def _root_name(node: ast.AST) -> str:
 def _runner_failure(reason: str, detail: str) -> AIEditValidationResult:
     if reason == "missing_fig":
         return _validation_failure(reason, MISSING_FIG_MESSAGE)
-    suffix = f" Không hỗ trợ: {detail}." if detail else ""
-    return _validation_failure(
-        reason,
-        RUNNER_INCOMPATIBLE_MESSAGE + suffix,
-        detail,
-    )
+
+    if reason == "forbidden_output_call":
+        if detail.endswith(".show"):
+            message = (
+                f"Không thể chạy code vì `{detail}()` không được hỗ trợ. "
+                "Ứng dụng sẽ tự hiển thị biến `fig`."
+            )
+        elif detail == "print":
+            message = (
+                "Không thể chạy code vì `print()` không được hỗ trợ "
+                "trong môi trường local."
+            )
+        elif detail == "display":
+            message = (
+                "Không thể chạy code vì `display()` không được hỗ trợ. "
+                "Ứng dụng sẽ tự hiển thị biến `fig`."
+            )
+        elif detail.endswith("write_html"):
+            message = (
+                "Không thể chạy code vì `write_html()` không được hỗ trợ "
+                "trong môi trường local."
+            )
+        else:
+            message = RUNNER_INCOMPATIBLE_MESSAGE
+    elif reason == "forbidden_namespace":
+        namespace = detail.split(".", 1)[0]
+        message = (
+            f"Không thể chạy code vì namespace `{namespace}` không có "
+            "trong runner. Chỉ cần tạo biến `fig`."
+        )
+    elif reason == "import_not_allowed":
+        message = (
+            "Không thể chạy code vì `import` không được hỗ trợ. Runner đã "
+            "cung cấp sẵn `df`, `pd`, `np`, `px` và `go`."
+        )
+    elif reason == "unsafe_builtin":
+        message = (
+            f"Không thể chạy code vì `{detail}()` không được hỗ trợ "
+            "trong môi trường local."
+        )
+    elif reason == "unknown_runtime_name":
+        message = (
+            f"Không thể chạy code vì `{detail}` không tồn tại trong runner. "
+            "Chỉ dùng `df`, `pd`, `np`, `px`, `go` và biến local hợp lệ."
+        )
+    elif reason == "missing_dataframe":
+        message = (
+            "Code phải sử dụng DataFrame `df` có sẵn trong môi trường local."
+        )
+    else:
+        message = RUNNER_INCOMPATIBLE_MESSAGE
+    return _validation_failure(reason, message, detail)
 
 
 def _output_call_detail(call: ast.Call) -> str:

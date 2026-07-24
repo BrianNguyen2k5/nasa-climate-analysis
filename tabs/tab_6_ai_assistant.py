@@ -11,6 +11,7 @@ from ai_assistant.code_edit_templates import apply_simple_code_edit
 from ai_assistant.code_sanitizer import (
     sanitize_generated_code,
     validate_ai_edit_for_application,
+    validate_runner_compatibility,
 )
 from ai_assistant.config import load_ai_config
 from ai_assistant.conversation_state import (
@@ -333,7 +334,11 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
     with col_clear:
         st.caption("Môi trường chạy có sẵn: `df`, `pd`, `np`, `px`, `go`.")
 
-    if edited_code != message.get("current_code", "") and not ask_fix:
+    if (
+        edited_code != message.get("current_code", "")
+        and not ask_fix
+        and not run_code
+    ):
         message = update_proposal_code(
             st.session_state.ai_messages,
             message_id,
@@ -404,6 +409,11 @@ def _render_code_review(message_id: str, df, config, context_text: str) -> None:
 
     if run_code:
         approved_code = edited_code
+        runner_validation = validate_runner_compatibility(approved_code)
+        if not runner_validation.valid:
+            st.warning(runner_validation.message)
+            return
+
         approved_message = mark_proposal_approved(
             st.session_state.ai_messages,
             message_id,

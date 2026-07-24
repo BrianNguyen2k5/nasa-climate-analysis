@@ -14,6 +14,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dotenv import load_dotenv
 
+from ai_assistant.code_runner import execute_chart_code
+
 # Load environment variables
 load_dotenv()
 
@@ -336,46 +338,9 @@ def execute_code(req: ExecuteRequest):
 
     try:
         df = load_dataset()
-
-        # Safe execution environment
-        safe_globals = {
-            "df": df,
-            "pd": pd,
-            "np": np,
-            "px": px,
-            "go": go,
-            "__builtins__": {
-                "__import__": __import__,
-                "range": range,
-                "len": len,
-                "int": int,
-                "float": float,
-                "str": str,
-                "bool": bool,
-                "dict": dict,
-                "list": list,
-                "set": set,
-                "min": min,
-                "max": max,
-                "sum": sum,
-                "abs": abs,
-                "round": round,
-                "print": print,
-                "isinstance": isinstance,
-            },
-        }
-        safe_locals = {}
-
-        # Execute code
-        exec(req.approved_code, safe_globals, safe_locals)
-
-        # Retrieve figure
-        fig = safe_locals.get("fig") or safe_globals.get("fig")
-
-        if fig is None:
-            raise ValueError("Mã nguồn thực thi không tạo ra biến `fig` (Plotly Figure).")
-
-        fig_json = json.loads(fig.to_json())
+        result = execute_chart_code(req.approved_code, df)
+        if not result.ok:
+            raise ValueError(result.message)
 
         # Record log
         log_entry = {
@@ -388,7 +353,7 @@ def execute_code(req: ExecuteRequest):
         }
         write_log_entry(log_entry)
 
-        return {"status": "success", "fig_json": fig_json}
+        return {"status": "success", "fig_json": result.fig_json}
 
     except Exception as e:
         error_msg = str(e)
